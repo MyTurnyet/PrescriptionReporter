@@ -15,6 +15,8 @@ public class PrescriptionTests {
     @Test
     void newPrescriptionHasNoFills() {
         assertThat(prescription.fillCount()).isZero();
+        assertThat(prescription.returnCount()).isZero();
+
     }
     @Test
     void prescriptionFilledOnceHasOneFill() {
@@ -32,6 +34,7 @@ public class PrescriptionTests {
         assertThat(filledPrescription.fillCount()).isEqualTo(1);
         final Prescription returnedPrescription = filledPrescription.returnIt();
         assertThat(returnedPrescription.fillCount()).isZero();
+        assertThat(returnedPrescription.returnCount()).isEqualTo(1);
     }
     @Test
     void prescriptionTwiceAndThenReturnedHasOneFills() {

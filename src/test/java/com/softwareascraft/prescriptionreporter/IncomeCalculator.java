@@ -6,6 +6,7 @@ public class IncomeCalculator {
     }
 
     public int incomeFor(Prescription prescription) {
-        return prescription.fillCount() * 5;
+        final int filledTotal = prescription.fillCount() * 5;
+        return filledTotal;
     }
 }

@@ -28,4 +28,10 @@ public class IncomeCalculatorTests {
         final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
         assertThat(totalAmount).isEqualTo(10);
     }
+
+//    @Test
+//    void prescriptionFilledThenReturnedLosesOneDollar() {
+//        final Prescription returnedPrescription = prescription.fill().returnIt();
+//        assertThat(new IncomeCalculator().incomeFor(returnedPrescription)).isEqualTo(-1);
+//    }
 }
