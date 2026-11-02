@@ -1,3 +1,5 @@
+package com.softwareascraft.prescriptionreporter;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -14,4 +16,5 @@ public class LedgerTests {
         final Set<PatientSummary> summaries = ledger.summaries();
         assertThat(summaries).isEmpty();
     }
+
 }

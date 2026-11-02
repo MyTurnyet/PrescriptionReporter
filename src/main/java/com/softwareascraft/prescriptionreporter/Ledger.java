@@ -1,3 +1,5 @@
+package com.softwareascraft.prescriptionreporter;
+
 import java.util.Set;
 
 public class Ledger {
