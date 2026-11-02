@@ -22,4 +22,10 @@ public class IncomeCalculatorTests {
         assertThat(totalAmount).isEqualTo(5);
     }
 
+    @Test
+    void IncomeForPrescriptionFilledTwiceIsTen() {
+        final Prescription fillPrescription = prescription.fill().fill();
+        final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
+        assertThat(totalAmount).isEqualTo(10);
+    }
 }
