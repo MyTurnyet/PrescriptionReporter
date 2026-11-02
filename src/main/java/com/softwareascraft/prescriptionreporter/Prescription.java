@@ -18,15 +18,15 @@ public class Prescription {
     }
 
     public int fillCount() {
-        return this.numberOfTimesFilled;
+        return this.numberOfTimesFilled - this.numberOfTimesReturned;
     }
 
     public Prescription fillIt() {
-        return new Prescription(this.userName, this.drugName, this.fillCount() + 1, this.numberOfTimesReturned);
+        return new Prescription(this.userName, this.drugName, this.numberOfTimesFilled + 1, this.numberOfTimesReturned);
     }
 
     public Prescription returnIt() {
-        return new Prescription(this.userName, this.drugName, this.fillCount() - 1, this.numberOfTimesReturned + 1);
+        return new Prescription(this.userName, this.drugName, this.numberOfTimesFilled, this.numberOfTimesReturned + 1);
     }
 
     public int returnCount() {

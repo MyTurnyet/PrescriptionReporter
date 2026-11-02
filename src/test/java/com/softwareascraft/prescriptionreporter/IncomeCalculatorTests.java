@@ -34,4 +34,10 @@ public class IncomeCalculatorTests {
         final Prescription returnedPrescription = prescription.fillIt().returnIt();
         assertThat(new IncomeCalculator().incomeFor(returnedPrescription)).isEqualTo(-1);
     }
+    @Test
+    void returnPenaltyIsKeptWhenPrescriptionIsFilledAgain() {
+        final Prescription finalPrescription = prescription.fillIt().returnIt().fillIt();
+
+        assertThat(new IncomeCalculator().incomeFor(finalPrescription)).isEqualTo(4);
+    }
 }
