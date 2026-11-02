@@ -10,21 +10,34 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class PrescriptionTests {
         final String userName = "User Name";
         final String drugName = "Drug Name";
+    final Prescription prescription = Prescription.create(userName, drugName);
+
     @Test
     void newPrescriptionHasNoFills() {
-        final Prescription prescription = Prescription.create(userName, drugName);
         assertThat(prescription.fillCount()).isZero();
     }
     @Test
     void prescriptionFilledOnceHasOneFill() {
-        final Prescription prescription = Prescription.create(userName, drugName);
         final Prescription filledPrescription = prescription.fill();
         assertThat(filledPrescription.fillCount()).isEqualTo(1);
     }
     @Test
     void prescriptionFilledTwiceHasTwoFill() {
-        final Prescription prescription = Prescription.create(userName, drugName);
         final Prescription filledPrescription = prescription.fill().fill();
         assertThat(filledPrescription.fillCount()).isEqualTo(2);
+    }
+    @Test
+    void prescriptionFilledAndThenReturnedHasZeroFills() {
+        final Prescription filledPrescription = prescription.fill();
+        assertThat(filledPrescription.fillCount()).isEqualTo(1);
+        final Prescription returnedPrescription = filledPrescription.returnIt();
+        assertThat(returnedPrescription.fillCount()).isZero();
+    }
+    @Test
+    void prescriptionTwiceAndThenReturnedHasOneFills() {
+        final Prescription filledPrescription = prescription.fill().fill();
+        assertThat(filledPrescription.fillCount()).isEqualTo(2);
+        final Prescription returnedPrescription = filledPrescription.returnIt();
+        assertThat(returnedPrescription.fillCount()).isEqualTo(1);
     }
 }

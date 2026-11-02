@@ -22,4 +22,8 @@ public class Prescription {
     public Prescription fill() {
         return new Prescription(this.userName, this.drugName, this.fillCount() + 1);
     }
+
+    public Prescription returnIt() {
+        return new Prescription(this.userName, this.drugName, this.fillCount() - 1);
+    }
 }
