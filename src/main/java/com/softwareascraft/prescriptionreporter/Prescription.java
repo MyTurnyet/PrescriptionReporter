@@ -11,11 +11,15 @@ public class Prescription {
         this.numberOfTimesFilled = fillCount;
     }
 
+    public static Prescription create(String userName, String drugName) {
+        return new Prescription(userName, drugName, 0);
+    }
+
     public int fillCount() {
         return this.numberOfTimesFilled;
     }
 
     public Prescription fill() {
-        return new Prescription(this.userName, this.drugName, this.fillCount()+1);
+        return new Prescription(this.userName, this.drugName, this.fillCount() + 1);
     }
 }
