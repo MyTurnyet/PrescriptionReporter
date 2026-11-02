@@ -20,17 +20,17 @@ public class PrescriptionTests {
     }
     @Test
     void prescriptionFilledOnceHasOneFill() {
-        final Prescription filledPrescription = prescription.fill();
+        final Prescription filledPrescription = prescription.fillIt();
         assertThat(filledPrescription.fillCount()).isEqualTo(1);
     }
     @Test
     void prescriptionFilledTwiceHasTwoFill() {
-        final Prescription filledPrescription = prescription.fill().fill();
+        final Prescription filledPrescription = prescription.fillIt().fillIt();
         assertThat(filledPrescription.fillCount()).isEqualTo(2);
     }
     @Test
     void prescriptionFilledAndThenReturnedHasZeroFills() {
-        final Prescription filledPrescription = prescription.fill();
+        final Prescription filledPrescription = prescription.fillIt();
         assertThat(filledPrescription.fillCount()).isEqualTo(1);
         final Prescription returnedPrescription = filledPrescription.returnIt();
         assertThat(returnedPrescription.fillCount()).isZero();
@@ -38,7 +38,7 @@ public class PrescriptionTests {
     }
     @Test
     void prescriptionTwiceAndThenReturnedHasOneFills() {
-        final Prescription filledPrescription = prescription.fill().fill();
+        final Prescription filledPrescription = prescription.fillIt().fillIt();
         assertThat(filledPrescription.fillCount()).isEqualTo(2);
         final Prescription returnedPrescription = filledPrescription.returnIt();
         assertThat(returnedPrescription.fillCount()).isEqualTo(1);

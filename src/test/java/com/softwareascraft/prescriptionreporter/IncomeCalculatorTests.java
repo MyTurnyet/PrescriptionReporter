@@ -17,21 +17,21 @@ public class IncomeCalculatorTests {
     }
     @Test
     void IncomeForPrescriptionFilledOnceIsFive() {
-        final Prescription fillPrescription = prescription.fill();
+        final Prescription fillPrescription = prescription.fillIt();
         final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
         assertThat(totalAmount).isEqualTo(5);
     }
 
     @Test
     void IncomeForPrescriptionFilledTwiceIsTen() {
-        final Prescription fillPrescription = prescription.fill().fill();
+        final Prescription fillPrescription = prescription.fillIt().fillIt();
         final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
         assertThat(totalAmount).isEqualTo(10);
     }
 
-//    @Test
-//    void prescriptionFilledThenReturnedLosesOneDollar() {
-//        final Prescription returnedPrescription = prescription.fill().returnIt();
-//        assertThat(new IncomeCalculator().incomeFor(returnedPrescription)).isEqualTo(-1);
-//    }
+    @Test
+    void prescriptionFilledThenReturnedLosesOneDollar() {
+        final Prescription returnedPrescription = prescription.fillIt().returnIt();
+        assertThat(new IncomeCalculator().incomeFor(returnedPrescription)).isEqualTo(-1);
+    }
 }

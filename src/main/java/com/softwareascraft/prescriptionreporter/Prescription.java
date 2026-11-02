@@ -21,7 +21,7 @@ public class Prescription {
         return this.numberOfTimesFilled;
     }
 
-    public Prescription fill() {
+    public Prescription fillIt() {
         return new Prescription(this.userName, this.drugName, this.fillCount() + 1, this.numberOfTimesReturned);
     }
 
