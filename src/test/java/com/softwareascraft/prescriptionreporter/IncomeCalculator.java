@@ -6,6 +6,6 @@ public class IncomeCalculator {
     }
 
     public int incomeFor(Prescription prescription) {
-        return 0;
+        return prescription.fillCount() * 5;
     }
 }

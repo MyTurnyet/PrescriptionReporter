@@ -8,11 +8,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("Unit")
 public class IncomeCalculatorTests {
+        final Prescription prescription = Prescription.create("User Name", "Drug Name");
     @Test
     void CalculatorReturnsZeroForUnfulfilledPrescription() {
-        final Prescription prescription = Prescription.create("User Name", "Drug Name");
         final IncomeCalculator incomeCalculator = new IncomeCalculator();
         final int income = incomeCalculator.incomeFor(prescription);
         assertThat(income).isEqualTo(0);
     }
+    @Test
+    void IncomeForPrescriptionFilledOnceIsFive() {
+        final Prescription fillPrescription = prescription.fill();
+        final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
+        assertThat(totalAmount).isEqualTo(5);
+    }
+
 }
