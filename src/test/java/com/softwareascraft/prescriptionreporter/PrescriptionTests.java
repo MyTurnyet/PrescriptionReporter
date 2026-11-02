@@ -12,8 +12,15 @@ public class PrescriptionTests {
     void newPrescriptionHasNoFills() {
         final String userName = "User Name";
         final String drugName = "Drug Name";
-        final Prescription prescription = new Prescription(userName, drugName);
-assertThat(prescription.fillCount()).isZero();
-
+        final Prescription prescription = new Prescription(userName, drugName, 0);
+        assertThat(prescription.fillCount()).isZero();
+    }
+    @Test
+    void prescriptionFilledOnceHasOneFill() {
+        final String userName = "User Name";
+        final String drugName = "Drug Name";
+        final Prescription prescription = new Prescription(userName, drugName, 0);
+        final Prescription filledPrescription = prescription.fill();
+        assertThat(filledPrescription.fillCount()).isEqualTo(1);
     }
 }
