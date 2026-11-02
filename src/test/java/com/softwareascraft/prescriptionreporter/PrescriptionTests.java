@@ -21,4 +21,10 @@ public class PrescriptionTests {
         final Prescription filledPrescription = prescription.fill();
         assertThat(filledPrescription.fillCount()).isEqualTo(1);
     }
+    @Test
+    void prescriptionFilledTwiceHasTwoFill() {
+        final Prescription prescription = Prescription.create(userName, drugName);
+        final Prescription filledPrescription = prescription.fill().fill();
+        assertThat(filledPrescription.fillCount()).isEqualTo(2);
+    }
 }
