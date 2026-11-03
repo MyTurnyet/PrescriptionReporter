@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,5 +33,15 @@ public class LedgerTests {
         final PatientSummary patientSummary = new PatientSummary("User Name", 0, 0);
         assertThat(ledger.summaries().size()).isEqualTo(1);
         assertThat(ledger.summaries().get(0)).isEqualTo(patientSummary);
+    }
+    @Test
+    void filledPrescriptionIsSummarizedWithOneFillAndFiveDollars() {
+
+        final Prescription filledPrescription = prescription.fillIt();
+        Ledger ledger = new Ledger().register(filledPrescription);
+        final PatientSummary patientSummary = ledger.summaries().get(0);
+        assertThat(patientSummary.userName()).isEqualTo("User Name");
+        assertThat(patientSummary.fillCount()).isEqualTo(1);
+        assertThat(patientSummary.totalAmount()).isEqualTo(5);
     }
 }

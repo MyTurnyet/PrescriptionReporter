@@ -2,31 +2,40 @@ package com.softwareascraft.prescriptionreporter;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 public class Ledger {
     private final List<Prescription> prescriptions;
+    private final IncomeCalculator incomeCalculator;
 
 
-    private Ledger(List<Prescription> prescriptions) {
+    private Ledger(IncomeCalculator incomeCalculator, List<Prescription> prescriptions) {
         this.prescriptions = prescriptions;
+        this.incomeCalculator = incomeCalculator;
+    }
+
+    public Ledger(IncomeCalculator incomeCalculator) {
+        this(incomeCalculator, List.of());
     }
 
     public Ledger() {
-        this(List.of());
+        this(new IncomeCalculator());
     }
 
     public List<PatientSummary> summaries() {
-        if(prescriptions.isEmpty()) {
+        if (prescriptions.isEmpty()) {
             return List.of();
         }
-        return List.of(new PatientSummary("User Name", 0, 0));
+        return prescriptions.stream().map(currentPrescription ->
+                new PatientSummary(
+                        currentPrescription.userName(),
+                        currentPrescription.fillCount(),
+                        this.incomeCalculator.incomeFor(currentPrescription))).toList();
 
     }
 
     public Ledger register(Prescription prescription) {
         List<Prescription> updated = new ArrayList<>(prescriptions);
         updated.add(prescription);
-        return new Ledger(List.copyOf(updated));
+        return new Ledger(this.incomeCalculator, List.copyOf(updated));
     }
 }
