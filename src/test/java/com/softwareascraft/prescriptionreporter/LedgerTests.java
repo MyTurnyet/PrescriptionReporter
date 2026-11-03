@@ -16,7 +16,7 @@ public class LedgerTests {
     @Test
     void newLedgerHasNoPatientSummaries() {
         final Ledger ledger = new Ledger();
-        final List summaries = ledger.summaries();
+        final List<PatientSummary> summaries = ledger.summaries();
         assertThat(summaries).isEmpty();
     }
 
@@ -25,5 +25,14 @@ public class LedgerTests {
         final Ledger ledger = new Ledger();
         final Ledger ledgerWithOne = ledger.register(prescription);
         assertThat(ledgerWithOne.summaries()).hasSize(1);
+    }
+
+    @Test
+    void registeredPrescriptionIsSummarizedWithZeroFillsAndZeroIncome() {
+        Ledger ledger = new Ledger().register(prescription);
+
+        final PatientSummary patientSummary = new PatientSummary("User Name", 0, 0);
+        assertThat(ledger.summaries().size()).isEqualTo(1);
+        assertThat(ledger.summaries().get(0)).isEqualTo(patientSummary);
     }
 }

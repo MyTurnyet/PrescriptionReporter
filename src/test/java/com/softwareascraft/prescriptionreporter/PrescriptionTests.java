@@ -16,6 +16,7 @@ public class PrescriptionTests {
     void newPrescriptionHasNoFills() {
         assertThat(prescription.fillCount()).isZero();
         assertThat(prescription.returnCount()).isZero();
+        assertThat(prescription.userName()).isEqualTo(userName);
 
     }
     @Test

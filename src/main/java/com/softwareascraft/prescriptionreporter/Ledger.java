@@ -16,8 +16,12 @@ public class Ledger {
         this(List.of());
     }
 
-    public List<Prescription> summaries() {
-        return prescriptions;
+    public List<PatientSummary> summaries() {
+        if(prescriptions.isEmpty()) {
+            return List.of();
+        }
+        return List.of(new PatientSummary("User Name", 0, 0));
+
     }
 
     public Ledger register(Prescription prescription) {

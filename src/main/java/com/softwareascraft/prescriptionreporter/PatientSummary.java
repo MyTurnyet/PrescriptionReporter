@@ -1,4 +1,4 @@
 package com.softwareascraft.prescriptionreporter;
 
-public class PatientSummary {
+public record PatientSummary(String userName, int fillCount, int totalAmount) {
 }

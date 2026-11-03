@@ -32,4 +32,8 @@ public class Prescription {
     public int returnCount() {
         return this.numberOfTimesReturned;
     }
+
+    public String userName() {
+        return userName;
+    }
 }
