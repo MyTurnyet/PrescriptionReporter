@@ -1,5 +1,7 @@
 package com.softwareascraft.prescriptionreporter;
 
+import java.util.Optional;
+
 public class Prescription {
     private final PrescriptionId id;
     private final int timesFilled;
@@ -27,8 +29,11 @@ public class Prescription {
         return new Prescription(this.id, this.timesFilled + 1, this.timesReturned);
     }
 
-    public Prescription returnIt() {
-        return new Prescription(this.id, this.timesFilled, this.timesReturned + 1);
+    public Optional<Prescription> returnIt() {
+        if (fillCount() <= 0) {
+            return Optional.empty();
+        }
+        return Optional.of(new Prescription(this.id, this.timesFilled, this.timesReturned + 1));
     }
 
     public int returnCount() {

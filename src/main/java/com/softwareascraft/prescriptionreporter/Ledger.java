@@ -40,11 +40,15 @@ public class Ledger {
 
     public Ledger returnOne(PrescriptionId id) {
         final Prescription existing = prescriptions.get(id);
-        if (existing == null || existing.fillCount() <= 0) {
-            warnings.warn("returned event ignored, no valid prior fill for " + id);
-            return this;
+        if (existing == null) {
+            return returnIgnored(id);
         }
-        return withPrescription(existing.returnIt());
+        return existing.returnIt().map(this::withPrescription).orElseGet(() -> returnIgnored(id));
+    }
+
+    private Ledger returnIgnored(PrescriptionId id) {
+        warnings.warn("returned event ignored, no valid prior fill for " + id);
+        return this;
     }
 
     public List<PatientSummary> summaries() {
