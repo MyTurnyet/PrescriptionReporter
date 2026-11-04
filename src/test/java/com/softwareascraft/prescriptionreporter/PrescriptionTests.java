@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class PrescriptionTests {
         final String userName = "User Name";
         final String drugName = "Drug Name";
-    final Prescription prescription = Prescription.create(userName, drugName);
+    final Prescription prescription = new Prescription(userName, drugName);
 
     @Test
     void newPrescriptionHasNoFills() {

@@ -13,8 +13,8 @@ public class Prescription {
         this.numberOfTimesReturned = numberOfTimesReturned;
     }
 
-    public static Prescription create(String userName, String drugName) {
-        return new Prescription(userName, drugName, 0, 0);
+    public Prescription(String userName, String drugName) {
+        this(userName, drugName, 0, 0);
     }
 
     public int fillCount() {

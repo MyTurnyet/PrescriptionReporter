@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("Unit")
 public class IncomeCalculatorTests {
-        final Prescription prescription = Prescription.create("User Name", "Drug Name");
+        final Prescription prescription = new Prescription("User Name", "Drug Name");
     @Test
     void CalculatorReturnsZeroForUnfulfilledPrescription() {
         final IncomeCalculator incomeCalculator = new IncomeCalculator();
