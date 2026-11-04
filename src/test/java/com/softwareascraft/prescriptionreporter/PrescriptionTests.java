@@ -3,6 +3,8 @@ package com.softwareascraft.prescriptionreporter;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 
@@ -32,22 +34,32 @@ public class PrescriptionTests {
     void prescriptionFilledAndThenReturnedHasZeroFills() {
         final Prescription filledPrescription = prescription.fillIt();
         assertThat(filledPrescription.fillCount()).isEqualTo(1);
-        final Prescription returnedPrescription = filledPrescription.returnIt();
-        assertThat(returnedPrescription.fillCount()).isZero();
-        assertThat(returnedPrescription.returnCount()).isEqualTo(1);
+        final Optional<Prescription> returnedPrescription = filledPrescription.returnIt();
+        assertThat(returnedPrescription).isPresent();
+        assertThat(returnedPrescription.get().fillCount()).isZero();
+        assertThat(returnedPrescription.get().returnCount()).isEqualTo(1);
     }
     @Test
     void prescriptionTwiceAndThenReturnedHasOneFills() {
         final Prescription filledPrescription = prescription.fillIt().fillIt();
         assertThat(filledPrescription.fillCount()).isEqualTo(2);
-        final Prescription returnedPrescription = filledPrescription.returnIt();
-        assertThat(returnedPrescription.fillCount()).isEqualTo(1);
+        final Optional<Prescription> returnedPrescription = filledPrescription.returnIt();
+        assertThat(returnedPrescription).isPresent();
+        assertThat(returnedPrescription.get().fillCount()).isEqualTo(1);
     }
 
     @Test
-    void returningAPrescriptionThatWasNeverFilledGoesNegative() {
-        final Prescription returnedPrescription = prescription.returnIt();
-        assertThat(returnedPrescription.fillCount()).isEqualTo(-1);
-        assertThat(returnedPrescription.returnCount()).isEqualTo(1);
+    void returningAValidFillReturnsPopulatedOptionalWithUpdatedCounts() {
+        final Prescription filledTwice = prescription.fillIt().fillIt();
+        final Optional<Prescription> returnedPrescription = filledTwice.returnIt();
+        assertThat(returnedPrescription).isPresent();
+        assertThat(returnedPrescription.get().fillCount()).isEqualTo(1);
+        assertThat(returnedPrescription.get().returnCount()).isEqualTo(1);
+    }
+
+    @Test
+    void returningAPrescriptionThatWasNeverFilledIsRefused() {
+        final Optional<Prescription> returnedPrescription = prescription.returnIt();
+        assertThat(returnedPrescription).isEmpty();
     }
 }
