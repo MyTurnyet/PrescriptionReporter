@@ -1,0 +1,80 @@
+package com.softwareascraft.prescriptionreporter;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@Tag("Unit")
+public class CommandLineAppTests {
+    @TempDir
+    Path tempDir;
+
+    private static final String SAMPLE = "Mark B created\nMark B filled\nMark B filled\n";
+
+    @Test
+    void readsFromStdinWhenNoArgumentIsGivenAndReturnsExitCodeZero() {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final InputStream originalIn = System.in;
+        System.setIn(new ByteArrayInputStream(SAMPLE.getBytes(StandardCharsets.UTF_8)));
+        int exitCode;
+        try {
+            exitCode = new CommandLineApp(new String[0], new RecordingWarnings(), sink).run();
+        } finally {
+            System.setIn(originalIn);
+        }
+
+        assertThat(exitCode).isZero();
+        assertThat(sink.written()).containsExactly("Mark: 2 fills $10 income");
+    }
+
+    @Test
+    void readsFromTheNamedFileWhenGivenAndReturnsExitCodeZero() throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, SAMPLE);
+        final InMemoryReportSink sink = new InMemoryReportSink();
+
+        final int exitCode = new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+
+        assertThat(exitCode).isZero();
+        assertThat(sink.written()).containsExactly("Mark: 2 fills $10 income");
+    }
+
+    @Test
+    void aMissingFileReturnsANonZeroExitCodeAndWritesNothing() {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final Path missing = tempDir.resolve("missing.txt");
+
+        final int exitCode = new CommandLineApp(new String[]{missing.toString()}, new RecordingWarnings(), sink).run();
+
+        assertThat(exitCode).isNotZero();
+        assertThat(sink.written()).isEmpty();
+    }
+
+    @Test
+    void fileAndStdinProduceEquivalentOutputForTheSameContent() throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, SAMPLE);
+        final InMemoryReportSink fileSink = new InMemoryReportSink();
+        new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), fileSink).run();
+
+        final InMemoryReportSink stdinSink = new InMemoryReportSink();
+        final InputStream originalIn = System.in;
+        System.setIn(new ByteArrayInputStream(SAMPLE.getBytes(StandardCharsets.UTF_8)));
+        try {
+            new CommandLineApp(new String[0], new RecordingWarnings(), stdinSink).run();
+        } finally {
+            System.setIn(originalIn);
+        }
+
+        assertThat(fileSink.written()).isEqualTo(stdinSink.written());
+    }
+}
