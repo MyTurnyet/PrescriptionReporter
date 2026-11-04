@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Tag("Unit")
 public class StdinEventSourceTests {
@@ -18,6 +19,19 @@ public class StdinEventSourceTests {
         try {
             final EventSource source = new StdinEventSource();
             assertThat(source.lines().toList()).containsExactly("Mark B created", "Mark B filled");
+        } finally {
+            System.setIn(originalIn);
+        }
+    }
+
+    @Test
+    void callingLinesASecondTimeThrows() {
+        final InputStream originalIn = System.in;
+        System.setIn(new ByteArrayInputStream("Mark B created\n".getBytes(StandardCharsets.UTF_8)));
+        try {
+            final EventSource source = new StdinEventSource();
+            source.lines();
+            assertThatThrownBy(source::lines).isInstanceOf(IllegalStateException.class);
         } finally {
             System.setIn(originalIn);
         }
