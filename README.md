@@ -132,12 +132,14 @@ function and not an over-engineered framework either.
   fill, so per-patient tallies alone would technically be enough. I keyed the ledger by `PrescriptionId` (patient +
   drug) and track each prescription's own fill/return counts instead, because that's what lets the ledger *structurally*
   enforce "discard before `created`" and "ignore a return with no valid prior fill" — those rules fall out of a map
-  lookup rather than being special-cased trust in well-formed input.
+  lookup rather than being special-cased trust in well-formed input. `Prescription` owns its own `PrescriptionId`
+  (rather than duplicating `patientName`/`drugName` as separate fields), so `Ledger.withPrescription` derives the map
+  key from the prescription itself — there's no way to hand it a mismatched key/value pair.
 - **Streaming.** Input is processed one line at a time via `Stream<String>` (`EventSource.lines()`), folded into the
   ledger with `reduce`, rather than being collected into a list first. Memory scales with the number of distinct
   prescriptions and patients, not with the size of the input file.
 - **Accessors versus "ask, don't tell".** `Ledger` reads a prescription's patient name through an accessor
-  (`userName()`), the same way `IncomeCalculator` reads `fillCount()` and `returnCount()`. Having `Prescription`
+  (`patientName()`), the same way `IncomeCalculator` reads `fillCount()` and `returnCount()`. Having `Prescription`
   build its own `PatientSummary` would follow "ask, don't tell" more closely, but it would pull a reporting concept
   into the domain object — the same reason pricing lives in `IncomeCalculator` and not on `Prescription`. I accepted
   the getters as a pragmatic compromise.

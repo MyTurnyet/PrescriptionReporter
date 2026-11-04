@@ -106,7 +106,13 @@ public class LedgerTests {
         final PrescriptionId johnE = new PrescriptionId("John", "E");
         final Ledger result = ledger.create(markB).create(johnE);
 
-        assertThat(result.summaries()).extracting(PatientSummary::userName)
+        assertThat(result.summaries()).extracting(PatientSummary::patientName)
                 .containsExactly("Mark", "John");
+    }
+
+    @Test
+    void creatingFillingOrReturningNeverMutatesTheOriginalLedger() {
+        ledger.create(markB).fill(markB).returnOne(markB);
+        assertThat(ledger.summaries()).isEmpty();
     }
 }

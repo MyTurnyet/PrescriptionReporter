@@ -1,39 +1,41 @@
 package com.softwareascraft.prescriptionreporter;
 
 public class Prescription {
-    private final String userName;
-    private final String drugName;
-    private final int numberOfTimesFilled;
-    private final int numberOfTimesReturned;
+    private final PrescriptionId id;
+    private final int timesFilled;
+    private final int timesReturned;
 
-    private Prescription(String userName, String drugName, int fillCount, int numberOfTimesReturned) {
-        this.userName = userName;
-        this.drugName = drugName;
-        this.numberOfTimesFilled = fillCount;
-        this.numberOfTimesReturned = numberOfTimesReturned;
+    private Prescription(PrescriptionId id, int timesFilled, int timesReturned) {
+        this.id = id;
+        this.timesFilled = timesFilled;
+        this.timesReturned = timesReturned;
     }
 
-    public Prescription(String userName, String drugName) {
-        this(userName, drugName, 0, 0);
+    public Prescription(String patientName, String drugName) {
+        this(new PrescriptionId(patientName, drugName), 0, 0);
+    }
+
+    public PrescriptionId id() {
+        return id;
     }
 
     public int fillCount() {
-        return this.numberOfTimesFilled - this.numberOfTimesReturned;
+        return this.timesFilled - this.timesReturned;
     }
 
     public Prescription fillIt() {
-        return new Prescription(this.userName, this.drugName, this.numberOfTimesFilled + 1, this.numberOfTimesReturned);
+        return new Prescription(this.id, this.timesFilled + 1, this.timesReturned);
     }
 
     public Prescription returnIt() {
-        return new Prescription(this.userName, this.drugName, this.numberOfTimesFilled, this.numberOfTimesReturned + 1);
+        return new Prescription(this.id, this.timesFilled, this.timesReturned + 1);
     }
 
     public int returnCount() {
-        return this.numberOfTimesReturned;
+        return this.timesReturned;
     }
 
-    public String userName() {
-        return userName;
+    public String patientName() {
+        return id.patientName();
     }
 }

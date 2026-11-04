@@ -8,16 +8,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("Unit")
 public class PrescriptionTests {
-        final String userName = "User Name";
-        final String drugName = "Drug Name";
-    final Prescription prescription = new Prescription(userName, drugName);
+    final String patientName = "User Name";
+    final String drugName = "Drug Name";
+    final Prescription prescription = new Prescription(patientName, drugName);
 
     @Test
     void newPrescriptionHasNoFills() {
         assertThat(prescription.fillCount()).isZero();
         assertThat(prescription.returnCount()).isZero();
-        assertThat(prescription.userName()).isEqualTo(userName);
-
+        assertThat(prescription.patientName()).isEqualTo(patientName);
     }
     @Test
     void prescriptionFilledOnceHasOneFill() {
@@ -43,5 +42,12 @@ public class PrescriptionTests {
         assertThat(filledPrescription.fillCount()).isEqualTo(2);
         final Prescription returnedPrescription = filledPrescription.returnIt();
         assertThat(returnedPrescription.fillCount()).isEqualTo(1);
+    }
+
+    @Test
+    void returningAPrescriptionThatWasNeverFilledGoesNegative() {
+        final Prescription returnedPrescription = prescription.returnIt();
+        assertThat(returnedPrescription.fillCount()).isEqualTo(-1);
+        assertThat(returnedPrescription.returnCount()).isEqualTo(1);
     }
 }
