@@ -5,7 +5,7 @@ number of fills and the total income.
 
 ## Requirements
 
-- Input is a file passed as an argument (`command filename.txt`) or stdin (`cat filename.txt | command`).
+- Input is a file passed as an argument (`PrescriptionReporter <Filepath>`) or stdin (`cat <Filepath> | PrescriptionReporter`).
 - Each line is `PatientName DrugName EventName`, space-delimited, with no spaces inside any field.
 - Events: `created`, `filled`, `returned`.
 - Output is one line per patient with total fills and total income.
@@ -118,6 +118,13 @@ function and not an over-engineered framework either.
 - **Layers.** Domain rules are tested directly against `Prescription`, `IncomeCalculator`, and `Ledger`. Parsing,
   formatting (including the `-$1` placement and alphabetical ordering), and the command-line wiring each have their
   own focused tests. `ReportApplicationTests` runs the full sample input through the whole pipeline with fakes.
+- **Functional tests.** `CommandLineAppTests` runs the *real* `CommandLineApp` (so `FileEventSource`, `EventParser`,
+  `Ledger`, and `ReportFormatter` are all real, not fakes) against actual files written to a JUnit `@TempDir`.
+  `theFullSampleInputFromTheBriefProducesTheExpectedReportViaARealFile` writes the brief's complete sample input to a
+  real file and asserts the exact expected report. The rest of that file cover: the same report produced from stdin,
+  a missing file returning a non-zero exit code, file and stdin producing identical output for the same content, and
+  three real-file edge cases (CRLF line endings, a file with no trailing newline, and an empty file). They run with
+  the rest of the suite — `mvn test` — nothing separate is needed to exercise them.
 - **Framework.** JUnit 5 for structure and tagging, AssertJ (`assertThat(...)`) for fluent assertions.
 - **Order matters for exact-match assertions.** `containsExactly` is used wherever the result order is itself part of
   the contract (the final report); `containsExactlyInAnyOrder` is used where it isn't (e.g. two patients' summaries
@@ -170,15 +177,28 @@ mvn compile
 Then run against a file argument:
 
 ```
-java -cp target/classes com.softwareascraft.prescriptionreporter.Main path/to/events.txt
+PrescriptionReporter <Filepath>
 ```
 
 or pipe events in on stdin:
 
 ```
-cat path/to/events.txt | java -cp target/classes com.softwareascraft.prescriptionreporter.Main
+cat <Filepath> | PrescriptionReporter
+```
+
+`PrescriptionReporter` isn't packaged as its own executable yet (`pom.xml` has no jar/shade plugin), so today that
+usage line maps to:
+
+```
+java -cp target/classes com.softwareascraft.prescriptionreporter.Main <Filepath>
+```
+
+and, for stdin:
+
+```
+cat <Filepath> | java -cp target/classes com.softwareascraft.prescriptionreporter.Main
 ```
 
 Malformed or discarded lines are reported on stderr as they're skipped; the report itself goes to stdout, so
-`... | java ... Main > report.txt` keeps the report clean. A missing or unreadable file argument prints an error and
-exits non-zero.
+redirecting stdout to a file keeps the report clean. A missing or unreadable file argument prints an error and exits
+non-zero.
