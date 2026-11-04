@@ -142,4 +142,82 @@ public class CommandLineAppTests {
         assertThat(exitCode).isZero();
         assertThat(sink.written()).isEmpty();
     }
+
+    private int runFileThrough(String content, InMemoryReportSink sink, RecordingWarnings warnings) throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, content);
+        return new CommandLineApp(new String[]{file.toString()}, warnings, sink).run();
+    }
+
+    @Test
+    void aFilledEventWithNoPriorCreatedIsDiscardedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        final int exitCode = runFileThrough("Mark B filled\n", sink, warnings);
+
+        assertThat(exitCode).isZero();
+        assertThat(sink.written()).isEmpty();
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
+    void aReturnedEventWithNoPriorCreatedIsDiscardedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        final int exitCode = runFileThrough("Mark B returned\n", sink, warnings);
+
+        assertThat(exitCode).isZero();
+        assertThat(sink.written()).isEmpty();
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
+    void aReturnedEventWithNoValidPriorFillIsDiscardedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        runFileThrough("Mark B created\nMark B returned\n", sink, warnings);
+
+        assertThat(sink.written()).containsExactly("Mark: 0 fills $0 income");
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
+    void aDuplicateCreatedEventIsDiscardedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        runFileThrough("Mark B created\nMark B filled\nMark B created\n", sink, warnings);
+
+        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
+    void aLineWithTheWrongFieldCountIsSkippedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        runFileThrough("Mark B created\nMark created\nMark B filled\n", sink, warnings);
+
+        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
+    void anUnknownEventNameIsSkippedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        runFileThrough("Mark B created\nMark B dispensed\nMark B filled\n", sink, warnings);
+
+        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
+    void aBlankLineIsSkippedAndWarned() throws IOException {
+        final InMemoryReportSink sink = new InMemoryReportSink();
+        final RecordingWarnings warnings = new RecordingWarnings();
+        runFileThrough("Mark B created\n\nMark B filled\n", sink, warnings);
+
+        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
+        assertThat(warnings.messages()).hasSize(1);
+    }
 }
