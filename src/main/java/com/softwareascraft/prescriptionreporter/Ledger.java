@@ -1,7 +1,9 @@
 package com.softwareascraft.prescriptionreporter;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class Ledger {
     private final List<Prescription> prescriptions;
@@ -25,12 +27,14 @@ public class Ledger {
         if (prescriptions.isEmpty()) {
             return List.of();
         }
-        return prescriptions.stream().map(currentPrescription ->
-                new PatientSummary(
-                        currentPrescription.userName(),
-                        currentPrescription.fillCount(),
-                        this.incomeCalculator.incomeFor(currentPrescription))).toList();
-
+        return prescriptions.stream()
+                .collect(Collectors.groupingBy(Prescription::userName, LinkedHashMap::new, Collectors.toList()))
+                .entrySet().stream()
+                .map(entry -> new PatientSummary(
+                        entry.getKey(),
+                        entry.getValue().stream().mapToInt(Prescription::fillCount).sum(),
+                        entry.getValue().stream().mapToInt(this.incomeCalculator::incomeFor).sum()))
+                .toList();
     }
 
     public Ledger register(Prescription prescription) {

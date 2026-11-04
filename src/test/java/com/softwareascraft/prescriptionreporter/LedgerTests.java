@@ -44,4 +44,12 @@ public class LedgerTests {
         assertThat(patientSummary.fillCount()).isEqualTo(1);
         assertThat(patientSummary.totalAmount()).isEqualTo(5);
     }
+    @Test
+    void prescriptionsForTheSamePatientAreSummedIntoOneSummary() {
+        Ledger ledger = new Ledger(new IncomeCalculator())
+                .register(Prescription.create("Mark", "B").fillIt())
+                .register(Prescription.create("Mark", "C").fillIt());
+
+        assertThat(ledger.summaries()).containsExactly(new PatientSummary("Mark", 2, 10));
+    }
 }
