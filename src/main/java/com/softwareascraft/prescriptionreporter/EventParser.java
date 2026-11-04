@@ -1,5 +1,6 @@
 package com.softwareascraft.prescriptionreporter;
 
+import java.util.Locale;
 import java.util.Optional;
 
 public class EventParser {
@@ -15,19 +16,16 @@ public class EventParser {
             return reject("blank line ignored");
         }
         final String[] fields = trimmed.split(" +");
-        if (fields.length != 3) {
-            return reject("malformed line ignored: " + line);
-        }
-        return eventFor(fields);
+        return fields.length == 3 ? eventFor(fields, trimmed) : reject("malformed line ignored: " + trimmed);
     }
 
-    private Optional<PrescriptionEvent> eventFor(String[] fields) {
+    private Optional<PrescriptionEvent> eventFor(String[] fields, String line) {
         final PrescriptionId id = new PrescriptionId(fields[0], fields[1]);
-        return switch (fields[2].toLowerCase()) {
+        return switch (fields[2].toLowerCase(Locale.ROOT)) {
             case "created" -> Optional.of(new Created(id));
             case "filled" -> Optional.of(new Filled(id));
             case "returned" -> Optional.of(new Returned(id));
-            default -> reject("unknown event ignored: " + fields[2]);
+            default -> reject("unknown event ignored: " + line);
         };
     }
 

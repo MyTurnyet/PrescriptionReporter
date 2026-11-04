@@ -32,6 +32,17 @@ public class EventParserTests {
     void eventNameMatchingIsCaseInsensitive() {
         assertThat(parser.parse("Mark B CREATED")).contains(new Created(markB));
         assertThat(parser.parse("Mark B Filled")).contains(new Filled(markB));
+        assertThat(parser.parse("Mark B ReTuRnEd")).contains(new Returned(markB));
+    }
+
+    @Test
+    void patientAndDrugNamesAreNotCaseFolded() {
+        assertThat(parser.parse("mark B created")).contains(new Created(new PrescriptionId("mark", "B")));
+    }
+
+    @Test
+    void multipleSpacesBetweenFieldsAreCollapsed() {
+        assertThat(parser.parse("Mark  B   created")).contains(new Created(markB));
     }
 
     @Test
@@ -41,10 +52,17 @@ public class EventParserTests {
     }
 
     @Test
+    void whitespaceOnlyLineIsTreatedAsBlank() {
+        assertThat(parser.parse("   ")).isEqualTo(Optional.empty());
+        assertThat(warnings.messages()).hasSize(1);
+    }
+
+    @Test
     void lineWithWrongFieldCountIsSkippedWithWarning() {
+        assertThat(parser.parse("created")).isEqualTo(Optional.empty());
         assertThat(parser.parse("Mark created")).isEqualTo(Optional.empty());
         assertThat(parser.parse("Mark B extra created")).isEqualTo(Optional.empty());
-        assertThat(warnings.messages()).hasSize(2);
+        assertThat(warnings.messages()).hasSize(3);
     }
 
     @Test
