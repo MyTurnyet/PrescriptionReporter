@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,6 +20,24 @@ public class CommandLineAppTests {
     Path tempDir;
 
     private static final String SAMPLE = "Mark B created\nMark B filled\nMark B filled\n";
+
+    private static final String FULL_SAMPLE = String.join("\n",
+            "Nick A created",
+            "Mark B created",
+            "Mark B filled",
+            "Mark C filled",
+            "Mark B returned",
+            "John E created",
+            "Mark B filled",
+            "Mark B filled",
+            "Paul D filled",
+            "John E filled",
+            "John E returned") + "\n";
+
+    private static final List<String> FULL_SAMPLE_EXPECTED_REPORT = List.of(
+            "John: 0 fills -$1 income",
+            "Mark: 2 fills $9 income",
+            "Nick: 0 fills $0 income");
 
     @Test
     void readsFromStdinWhenNoArgumentIsGivenAndReturnsExitCodeZero() {
@@ -76,5 +95,51 @@ public class CommandLineAppTests {
         }
 
         assertThat(fileSink.written()).isEqualTo(stdinSink.written());
+    }
+
+    @Test
+    void theFullSampleInputFromTheBriefProducesTheExpectedReportViaARealFile() throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, FULL_SAMPLE);
+        final InMemoryReportSink sink = new InMemoryReportSink();
+
+        final int exitCode = new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+
+        assertThat(exitCode).isZero();
+        assertThat(sink.written()).containsExactlyElementsOf(FULL_SAMPLE_EXPECTED_REPORT);
+    }
+
+    @Test
+    void theFullSampleWithCrlfLineEndingsProducesTheSameReport() throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, FULL_SAMPLE.replace("\n", "\r\n"));
+        final InMemoryReportSink sink = new InMemoryReportSink();
+
+        new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+
+        assertThat(sink.written()).containsExactlyElementsOf(FULL_SAMPLE_EXPECTED_REPORT);
+    }
+
+    @Test
+    void aFileWithNoTrailingNewlineStillParsesTheLastLine() throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, FULL_SAMPLE.stripTrailing());
+        final InMemoryReportSink sink = new InMemoryReportSink();
+
+        new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+
+        assertThat(sink.written()).containsExactlyElementsOf(FULL_SAMPLE_EXPECTED_REPORT);
+    }
+
+    @Test
+    void anEmptyFileProducesAnEmptyReportAndExitCodeZero() throws IOException {
+        final Path file = tempDir.resolve("events.txt");
+        Files.writeString(file, "");
+        final InMemoryReportSink sink = new InMemoryReportSink();
+
+        final int exitCode = new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+
+        assertThat(exitCode).isZero();
+        assertThat(sink.written()).isEmpty();
     }
 }
