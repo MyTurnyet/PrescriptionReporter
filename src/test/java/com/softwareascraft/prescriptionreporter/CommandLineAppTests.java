@@ -157,7 +157,7 @@ public class CommandLineAppTests {
 
         assertThat(exitCode).isZero();
         assertThat(sink.written()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -168,7 +168,7 @@ public class CommandLineAppTests {
 
         assertThat(exitCode).isZero();
         assertThat(sink.written()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -178,7 +178,7 @@ public class CommandLineAppTests {
         runFileThrough("Mark B created\nMark B returned\n", sink, warnings);
 
         assertThat(sink.written()).containsExactly("Mark: 0 fills $0 income");
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -188,7 +188,7 @@ public class CommandLineAppTests {
         runFileThrough("Mark B created\nMark B filled\nMark B created\n", sink, warnings);
 
         assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -198,7 +198,7 @@ public class CommandLineAppTests {
         runFileThrough("Mark B created\nMark created\nMark B filled\n", sink, warnings);
 
         assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -208,7 +208,7 @@ public class CommandLineAppTests {
         runFileThrough("Mark B created\nMark B dispensed\nMark B filled\n", sink, warnings);
 
         assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -218,6 +218,6 @@ public class CommandLineAppTests {
         runFileThrough("Mark B created\n\nMark B filled\n", sink, warnings);
 
         assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 }

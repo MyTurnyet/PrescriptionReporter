@@ -23,7 +23,7 @@ public class Ledger {
 
     public Ledger create(PrescriptionId id) {
         if (prescriptions.containsKey(id)) {
-            warnings.warn("duplicate created event ignored for " + id);
+            warnings.warn(new DiscardReason.DuplicateCreated(id));
             return this;
         }
         return withPrescription(new Prescription(id.patientName(), id.drugName()));
@@ -32,7 +32,7 @@ public class Ledger {
     public Ledger fill(PrescriptionId id) {
         final Prescription existing = prescriptions.get(id);
         if (existing == null) {
-            warnings.warn("filled event ignored, no created prescription for " + id);
+            warnings.warn(new DiscardReason.NoCreatedPrescriptionToFill(id));
             return this;
         }
         return withPrescription(existing.fillIt());
@@ -47,7 +47,7 @@ public class Ledger {
     }
 
     private Ledger returnIgnored(PrescriptionId id) {
-        warnings.warn("returned event ignored, no valid prior fill for " + id);
+        warnings.warn(new DiscardReason.NoValidPriorFillToReturn(id));
         return this;
     }
 

@@ -12,10 +12,10 @@ public class EventParser {
     public Ledger applyLine(Ledger ledger, String line) {
         final String trimmed = line.strip();
         if (trimmed.isEmpty()) {
-            return rejectLine(ledger, "blank line ignored");
+            return rejectLine(ledger, new DiscardReason.BlankLine());
         }
         final String[] fields = trimmed.split(" +");
-        return fields.length == 3 ? applyFields(ledger, fields, trimmed) : rejectLine(ledger, "malformed line ignored: " + trimmed);
+        return fields.length == 3 ? applyFields(ledger, fields, trimmed) : rejectLine(ledger, new DiscardReason.MalformedLine(trimmed));
     }
 
     private Ledger applyFields(Ledger ledger, String[] fields, String line) {
@@ -24,12 +24,12 @@ public class EventParser {
             case "created" -> ledger.create(id);
             case "filled" -> ledger.fill(id);
             case "returned" -> ledger.returnOne(id);
-            default -> rejectLine(ledger, "unknown event ignored: " + line);
+            default -> rejectLine(ledger, new DiscardReason.UnknownEvent(line));
         };
     }
 
-    private Ledger rejectLine(Ledger ledger, String message) {
-        warnings.warn(message);
+    private Ledger rejectLine(Ledger ledger, DiscardReason reason) {
+        warnings.warn(reason);
         return ledger;
     }
 }

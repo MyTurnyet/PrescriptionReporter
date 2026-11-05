@@ -4,14 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 class RecordingWarnings implements Warnings {
-    private final List<String> messages = new ArrayList<>();
+    private final List<DiscardReason> reasons = new ArrayList<>();
 
     @Override
-    public void warn(String message) {
-        messages.add(message);
+    public void warn(DiscardReason reason) {
+        reasons.add(reason);
     }
 
-    List<String> messages() {
-        return List.copyOf(messages);
+    List<DiscardReason> reasons() {
+        return List.copyOf(reasons);
     }
 }

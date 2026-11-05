@@ -58,6 +58,6 @@ public class ReportApplicationTests {
         )).run();
 
         assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 }

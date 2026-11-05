@@ -61,7 +61,7 @@ public class LedgerTests {
     void fillingAnUnknownPrescriptionIsIgnoredAndWarned() {
         final Ledger result = ledger.fill(markB);
         assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).containsExactly(new DiscardReason.NoCreatedPrescriptionToFill(markB));
     }
 
     @Test
@@ -70,35 +70,35 @@ public class LedgerTests {
         final Ledger result = ledger.create(johnE).fill(johnE).fill(markB);
 
         assertThat(result.summaries()).containsExactly(new PatientSummary("John", 1, 5));
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
     void returningWithNoValidPriorFillIsIgnoredAndWarned() {
         final Ledger result = ledger.create(markB).returnOne(markB);
         assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, 0));
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).containsExactly(new DiscardReason.NoValidPriorFillToReturn(markB));
     }
 
     @Test
     void returningAnUnknownPrescriptionIsIgnoredAndWarned() {
         final Ledger result = ledger.returnOne(markB);
         assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
     void fillThenReturnThenReturnAgainKeepsNetFillsAtZero() {
         final Ledger result = ledger.create(markB).fill(markB).returnOne(markB).returnOne(markB);
         assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, -1));
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
     void duplicateCreatedEventIsIgnoredAndWarnedAndKeepsPriorFills() {
         final Ledger result = ledger.create(markB).fill(markB).create(markB);
         assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 1, 5));
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).containsExactly(new DiscardReason.DuplicateCreated(markB));
     }
 
     @Test

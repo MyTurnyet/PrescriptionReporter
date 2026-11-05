@@ -57,14 +57,14 @@ public class EventParserTests {
     void blankLineIsSkippedWithWarning() {
         final Ledger result = parser.applyLine(ledger, "");
         assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).containsExactly(new DiscardReason.BlankLine());
     }
 
     @Test
     void whitespaceOnlyLineIsTreatedAsBlank() {
         final Ledger result = parser.applyLine(ledger, "   ");
         assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).hasSize(1);
     }
 
     @Test
@@ -73,14 +73,17 @@ public class EventParserTests {
         result = parser.applyLine(result, "Mark created");
         result = parser.applyLine(result, "Mark B extra created");
         assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.messages()).hasSize(3);
+        assertThat(warnings.reasons()).containsExactly(
+                new DiscardReason.MalformedLine("created"),
+                new DiscardReason.MalformedLine("Mark created"),
+                new DiscardReason.MalformedLine("Mark B extra created"));
     }
 
     @Test
     void unknownEventNameIsSkippedWithWarning() {
         final Ledger result = parser.applyLine(ledger, "Mark B dispensed");
         assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.messages()).hasSize(1);
+        assertThat(warnings.reasons()).containsExactly(new DiscardReason.UnknownEvent("Mark B dispensed"));
     }
 
     @Test
