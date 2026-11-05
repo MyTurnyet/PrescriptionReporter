@@ -29,6 +29,6 @@ public class ReportApplication {
     }
 
     private Ledger applyLine(Ledger ledger, String line) {
-        return parser.parse(line).map(event -> event.applyTo(ledger)).orElse(ledger);
+        return parser.applyLine(ledger, line);
     }
 }

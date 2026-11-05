@@ -1,7 +1,6 @@
 package com.softwareascraft.prescriptionreporter;
 
 import java.util.Locale;
-import java.util.Optional;
 
 public class EventParser {
     private final Warnings warnings;
@@ -10,27 +9,27 @@ public class EventParser {
         this.warnings = warnings;
     }
 
-    public Optional<PrescriptionEvent> parse(String line) {
+    public Ledger applyLine(Ledger ledger, String line) {
         final String trimmed = line.strip();
         if (trimmed.isEmpty()) {
-            return reject("blank line ignored");
+            return rejectLine(ledger, "blank line ignored");
         }
         final String[] fields = trimmed.split(" +");
-        return fields.length == 3 ? eventFor(fields, trimmed) : reject("malformed line ignored: " + trimmed);
+        return fields.length == 3 ? applyFields(ledger, fields, trimmed) : rejectLine(ledger, "malformed line ignored: " + trimmed);
     }
 
-    private Optional<PrescriptionEvent> eventFor(String[] fields, String line) {
+    private Ledger applyFields(Ledger ledger, String[] fields, String line) {
         final PrescriptionId id = new PrescriptionId(fields[0], fields[1]);
         return switch (fields[2].toLowerCase(Locale.ROOT)) {
-            case "created" -> Optional.of(new Created(id));
-            case "filled" -> Optional.of(new Filled(id));
-            case "returned" -> Optional.of(new Returned(id));
-            default -> reject("unknown event ignored: " + line);
+            case "created" -> ledger.create(id);
+            case "filled" -> ledger.fill(id);
+            case "returned" -> ledger.returnOne(id);
+            default -> rejectLine(ledger, "unknown event ignored: " + line);
         };
     }
 
-    private Optional<PrescriptionEvent> reject(String message) {
+    private Ledger rejectLine(Ledger ledger, String message) {
         warnings.warn(message);
-        return Optional.empty();
+        return ledger;
     }
 }
