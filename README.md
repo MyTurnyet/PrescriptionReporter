@@ -1,159 +1,183 @@
 # Prescription Report
 
-A command-line program that reads a stream of pharmacy prescription events and prints, for each patient, the total
-number of fills and the total income.
+Reads a stream of pharmacy prescription events and prints, per patient, how many fills they have and how much
+income they generated.
 
 ## Requirements
 
-- Input is a file passed as an argument (`PrescriptionReporter <Filepath>`) or stdin (`cat <Filepath> | PrescriptionReporter`).
-- Each line is `PatientName DrugName EventName`, space-delimited, with no spaces inside any field.
-- Events: `created`, `filled`, `returned`.
-- Output is one line per patient with total fills and total income.
+- Input is a file passed as an argument (`PrescriptionReporter <Filepath>`) or piped in on stdin
+  (`cat <Filepath> | PrescriptionReporter`).
+- Each line is `PatientName DrugName EventName`, space-delimited. No field contains spaces.
+- Three event types: `created`, `filled`, `returned`.
+- Output is one line per patient: total fills, total income.
 
-## Interpretation of the Rules
+## Reading the rules
 
-### Prescription identity
+A prescription is identified by (patient, drug) — `Mark B` and `Mark C` are different prescriptions even though
+they're the same patient. `filled` and `returned` events that show up before their prescription's `created` event
+get discarded. They're not buffered waiting for a `created` to show up later, and they're not retroactively applied
+if one never does — if the input never creates that prescription, those events just never happened as far as the
+report is concerned. A `returned` cancels exactly one prior fill.
 
-A prescription is identified by the pair (patient, drug). `Mark B` and `Mark C` are two different prescriptions for the
-same patient.
+The income rule in the brief ("each return is a $1 loss") doesn't say whether that's net of fills or not, so I
+worked backward from the sample numbers instead of guessing:
 
-### Event handling
+| Patient | Events             | Net fills | Income                |
+|---------|--------------------|-----------|------------------------|
+| Mark    | 3 fills, 1 return  | 2         | 2 × $5 − $1 = **$9**  |
+| John    | 1 fill, 1 return   | 0         | 0 × $5 − $1 = **-$1** |
+| Nick    | none               | 0         | **$0**                |
 
-- `filled` and `returned` events that arrive before the prescription's `created` event are discarded. They are not
-  buffered and are not applied retroactively.
-- A `returned` event cancels one prior fill.
-
-### Income
-
-The spec's wording ("each return is a $1 loss") is ambiguous, so I worked it out against the sample data:
-
-| Patient | Events counted    | Net fills | Income                |
-|---------|-------------------|-----------|-----------------------|
-| Mark    | 3 fills, 1 return | 2         | 2 x $5 - $1 = **$9**  |
-| John    | 1 fill, 1 return  | 0         | 0 x $5 - $1 = **-$1** |
-| Nick    | none              | 0         | **$0**                |
-
-So:
-
-- **Total fills** is net of returns (fills minus returns).
-- **Income** is `$5 x net fills - $1 x returns`. In effect a return reverses the $5 and also costs $1.
-- The $1 penalty is permanent. A later re-fill earns a fresh $5 and does not refund it.
+That only works out if "total fills" means net of returns, and income is `$5 × net fills − $1 × returns` — a
+return takes back the $5 *and* costs an extra dollar. And the dollar penalty sticks: filling the same prescription
+again later doesn't refund it, it just earns a fresh $5 on top.
 
 ## Assumptions
 
-These cover things the spec doesn't say.
+Things the brief didn't pin down, so I picked something reasonable and I'm documenting it rather than guessing
+silently:
 
-1. **Patient names are unique keys.** Two lines with the name `Mark` refer to the same patient.
-2. **A patient appears in the report only if they have at least one created prescription.** The sample shows
-   this: `Paul D filled` has no `created` event, and Paul is absent from the expected output.
-3. **Output is sorted alphabetically by patient name.** The sample output in the spec (Mark, John, Nick) follows no
-   obvious ordering and is probably an artifact of hash-map iteration. I chose a deterministic order so the output is
-   testable and reproducible. The comparison is Java's natural `String` ordering (case-sensitive).
-4. **Output format follows the spec's sample, not its prose.** The prose says `PatientName TotalFills Income`, but the
-   sample shows `Mark: 2 fills $9 income`, with negative amounts written as `-$1`. I treat the sample as authoritative.
-   The word is always "fills", never "fill", even for a count of zero or one.
-5. **Malformed or invalid lines are skipped with a warning on stderr, and processing continues.** This covers lines
-   with the wrong number of fields, unknown event names, and blank lines. Warnings go to stderr so stdout stays a
-   clean report that can be piped.
-6. **Event names are matched case-insensitively** (`Created`, `CREATED`, and `created` are all accepted), since the
-   spec doesn't state a case convention and real-world input is more likely to vary in case than to contain a
-   deliberately different event type. Patient and drug names are matched exactly as given; the spec never implies they
-   should be normalized.
-7. **A `returned` event with no valid prior fill is discarded entirely, not just clamped.** This includes a return
-   whose matching fill was itself discarded for lacking a `created` event. The event is ignored and a warning is
-   emitted; neither the fill count nor the $1 penalty is applied. This guarantees net fills can never go negative
-   without needing a special case in the math.
-8. **A duplicate `created` event for an already-created (patient, drug) pair is ignored and warned**, keeping the
-   prescription's existing fill/return history untouched. The spec says this won't happen, but the ledger defends
-   against it rather than silently resetting state.
-9. **Input source:** a filename argument is read if present, otherwise stdin. A missing or unreadable file produces an
-   error message on stderr and a non-zero exit code.
-10. **Exit code is 0 whenever a report was produced**, even if some lines were skipped with warnings along the way.
-    A non-zero exit code is reserved for a run that couldn't produce a report at all (an unreadable input file).
-11. **Money is stored as integer dollars,** never floating point.
+1. Patient names are unique keys — two lines with `Mark` are the same patient.
+2. A patient only shows up in the report if they have at least one `created` prescription. `Paul D filled` with no
+   matching `created` is why Paul isn't in the sample's expected output.
+3. The report is sorted alphabetically by patient name. The brief's sample output (Mark, John, Nick) isn't
+   alphabetical, chronological, or sorted by anything I can find — it reads like whatever order a HashMap happened
+   to iterate in for the reference solution. I went with alphabetical so the output is actually deterministic and
+   the tests aren't ordering-fragile.
+4. Output format follows the brief's *example*, not its prose description. The prose says
+   `PatientName TotalFills Income`; the example shows `Mark: 2 fills $9 income` with negative amounts written
+   `-$1` (sign before the dollar sign). I went with what the example actually shows. "fills" is always plural,
+   even for zero or one.
+5. Bad lines — wrong field count, an event name that isn't one of the three, blank lines — get skipped with a
+   warning on stderr, and the rest of the file still processes. Warnings go to stderr specifically so stdout stays
+   a clean report you can pipe somewhere.
+6. Event names match case-insensitively (`Created`, `CREATED`, `created` are all fine). Patient and drug names
+   don't get normalized at all — the brief never implies they should be, and case-folding someone's name felt like
+   the wrong kind of liberty to take.
+7. A `returned` with no valid fill to cancel — including one whose own `filled` event got discarded for having no
+   `created` — is dropped entirely rather than partially applied. No fill-count change, no dollar penalty, just a
+   warning. `Prescription` itself refuses the return (it's the one holding the fill/return counts), so the ledger
+   never has to trust a caller to pre-check — net fills can't go negative by construction.
+8. A duplicate `created` for a prescription that already exists gets ignored and warned, leaving whatever fills
+   and returns it already had alone. The brief says this won't happen, but I'd rather the ledger defend against it
+   than silently wipe out history if it ever did.
+9. No filename argument means read stdin. A filename that can't be opened prints an error and exits non-zero.
+10. Exit code is 0 any time a report actually got produced, warnings or not. Non-zero is reserved for runs that
+    couldn't produce a report at all (an unreadable file).
+11. Money is an `int`, not a float, for the obvious reason.
 
-## Design
+## How it's put together
 
-The guiding idea is a small set of single-purpose collaborators wired together at the edge, rather than one large
-function and not an over-engineered framework either.
+I didn't want one big function, but I also didn't want to over-build this into something with five layers of
+indirection for three event types. What I landed on:
 
-- **Ports.** Input and output are interfaces (`EventSource` and `ReportSink`). `FileEventSource` and
-  `StdinEventSource` are the production input adapters; `StdoutReportSink` is the production output adapter. Tests
-  use small hand-written in-memory fakes (`InMemoryEventSource`, `InMemoryReportSink`) instead.
-- **Events.** `PrescriptionEvent` is an interface with immutable record implementations `Created`, `Filled`, and
-  `Returned`, each holding a `PrescriptionId`. Each event applies itself to a `Ledger` via `applyTo(Ledger)`, so
-  nothing else needs to `switch` on event type.
-- **Parser.** `EventParser` turns a raw line into an `Optional<PrescriptionEvent>`. It owns all malformed-line
-  handling (wrong field count, blank lines, unknown event names) and reports rejections through `Warnings`, so the
-  domain never sees bad input.
-- **Ledger.** An immutable object keyed by `PrescriptionId` (patient + drug). `create`, `fill`, and `returnOne` each
-  return a new `Ledger`. It is the single place that knows which events count (a prior `created` exists, a `returned`
-  has a valid fill to cancel) and tallies fills and income per patient through `summaries()`.
-- **Pricing.** `IncomeCalculator` is the only place that knows the $5 fill and $1 return amounts, kept as `private
-  final` instance fields rather than static constants. `Prescription` and `Ledger` know nothing about money.
-- **Warnings.** A `Warnings` port (`warn(String)`) decouples "an event was discarded" from "where that gets printed."
-  `StderrWarnings` is the production implementation; tests use a hand-written `RecordingWarnings` fake.
-- **Report.** `ReportFormatter` sorts summaries by patient name and renders each line, including the `-$1` sign
-  placement. Sorting and presentation are kept out of the domain.
-- **Wiring.** `ReportApplication` folds every parsed event into a `Ledger` and writes the formatted report to a
-  `ReportSink`. `CommandLineApp` decides which `EventSource` to use (stdin vs. a named file) and maps a missing file to
-  a non-zero exit code. `Main.main` is a single line that delegates to `CommandLineApp` — there's nothing left in it
-  worth unit testing directly.
+`EventSource` and `ReportSink` are the input/output seams — interfaces, so the domain doesn't know or care whether
+it's reading a file, stdin, or a test fixture. `FileEventSource` and `StdinEventSource` are the real input
+adapters, `StdoutReportSink` the real output one; tests swap in hand-written in-memory versions instead.
 
-### Code style constraints
+I did try an event hierarchy at one point — a `PrescriptionEvent` interface with `Created`/`Filled`/`Returned`
+records, each knowing how to apply itself to a `Ledger`. It didn't earn its keep: something still had to switch on
+the event name string to build the right record in the first place, so the switch I was trying to avoid just moved
+one line earlier, at the cost of four extra files for three cases that will never grow a fourth. `EventParser` now
+does the obvious thing instead — `applyLine(Ledger, String)` parses a line and calls `ledger.create`/`fill`/
+`returnOne` directly in one switch expression. One place has a switch on event type; that's fine.
 
-- Methods of at most 8 lines, with low cognitive complexity.
-- Dependencies point at interfaces (dependency inversion) and composition is preferred over inheritance.
-- Objects are immutable, with no static methods and no mutable shared state (other than `Main.main` itself).
-- "Ask, don't tell": objects are asked to do work rather than having their state pulled out and acted on.
+`Ledger` is immutable and keyed by `PrescriptionId`. `create`, `fill`, and `returnOne` each hand back a new
+`Ledger` rather than mutating anything, and it's the one place that knows whether a `created`/`fill` actually
+counts — `Prescription.returnIt()` handles the "something to cancel" check itself and hands back an empty
+`Optional` if there isn't. `summaries()` groups by patient and adds up fills and income from there.
 
-## Testing Strategy
+`IncomeCalculator` is the only class that knows $5 and $1 are the relevant numbers, and they're instance fields,
+not static constants — `Prescription` and `Ledger` never touch money at all. Discard decisions go through a small
+`Warnings` port instead of printing directly, so `Ledger` and `EventParser` don't need to know or care that it's
+stderr on the other end — and what gets discarded is a typed `DiscardReason` (a sealed interface, one record per
+case: a duplicate `created`, a fill/return with nothing to apply to, a malformed line, and so on), not a loose
+string, so nothing downstream has to parse English to find out what happened. `ReportFormatter` handles sorting
+and the `-$1` formatting, kept separate from the domain on purpose.
 
-- **Test-driven.** Each behavior started as a failing test, from the smallest possible step (an empty ledger has no
-  summaries) up through full end-to-end runs of the sample input.
-- **No mocking frameworks.** If a mock were needed, the design would be wrong. I/O is behind interfaces
-  (`EventSource`, `ReportSink`, `Warnings`), so tests use small hand-written in-memory fakes instead
-  (`InMemoryEventSource`, `InMemoryReportSink`, `RecordingWarnings`). A few tests exercise the real file system and
-  real stdin/stdout via `@TempDir` and stream redirection, since that's real behavior, not something to fake.
-- **Layers.** Domain rules are tested directly against `Prescription`, `IncomeCalculator`, and `Ledger`. Parsing,
-  formatting (including the `-$1` placement and alphabetical ordering), and the command-line wiring each have their
-  own focused tests. `ReportApplicationTests` runs the full sample input through the whole pipeline with fakes.
-- **Functional tests.** `CommandLineAppTests` runs the *real* `CommandLineApp` (so `FileEventSource`, `EventParser`,
-  `Ledger`, and `ReportFormatter` are all real, not fakes) against actual files written to a JUnit `@TempDir`.
-  `theFullSampleInputFromTheBriefProducesTheExpectedReportViaARealFile` writes the brief's complete sample input to a
-  real file and asserts the exact expected report. The rest of that file cover: the same report produced from stdin,
-  a missing file returning a non-zero exit code, file and stdin producing identical output for the same content, and
-  three real-file edge cases (CRLF line endings, a file with no trailing newline, and an empty file). They run with
-  the rest of the suite — `mvn test` — nothing separate is needed to exercise them.
-- **Framework.** JUnit 5 for structure and tagging, AssertJ (`assertThat(...)`) for fluent assertions.
-- **Order matters for exact-match assertions.** `containsExactly` is used wherever the result order is itself part of
-  the contract (the final report); `containsExactlyInAnyOrder` is used where it isn't (e.g. two patients' summaries
-  from a ledger before formatting).
+Wiring lives at the edges: `ReportApplication` folds parsed events into a `Ledger` and writes the result,
+`CommandLineApp` decides stdin vs. a named file and turns a missing file into a non-zero exit, and `Main.main` is
+one line that hands off to `CommandLineApp` — there's nothing left in it worth testing on its own.
+
+A few constraints I held myself to throughout: methods stay under 8 lines and simple, dependencies point at
+interfaces with concrete types only wired up at the edges, everything's immutable with no statics besides `main`,
+and objects get asked to do things rather than having their internals pulled out and poked at — though see the
+tradeoffs section for where I didn't fully hold that last line.
+
+## Testing
+
+Test-first, starting from the smallest possible case (an empty ledger has no summaries) and building up from
+there. No mocking libraries — if something felt like it needed a mock, that was a sign the design needed
+rethinking instead. I/O sits behind interfaces, so tests use small hand-rolled fakes: `InMemoryEventSource`,
+`InMemoryReportSink`, `RecordingWarnings`. A handful of tests use the real filesystem and real stdin/stdout instead
+(`@TempDir`, stream redirection) — that's real behavior worth testing directly, not something to fake away.
+
+Domain rules get tested directly against `Prescription`, `IncomeCalculator`, and `Ledger`. Parsing, formatting, and
+the CLI wiring each have their own focused tests on top of that. `ReportApplicationTests` runs the brief's full
+sample through the whole pipeline with fakes standing in for I/O.
+
+`CommandLineAppTests`, `FileEventSourceTests`, `StdinEventSourceTests`, and `StdoutReportSinkTests` go a step
+further and run against the real filesystem and real streams instead of fakes — these are tagged `@Tag("Functional")`
+rather than `@Tag("Unit")`, so the two tiers are actually filterable, not just a description in this file.
+`CommandLineAppTests` runs the real `CommandLineApp` — real `FileEventSource`, real `EventParser`, real `Ledger`,
+real `ReportFormatter` — against files written to a `@TempDir`.
+`theFullSampleInputFromTheBriefProducesTheExpectedReportViaARealFile` writes the brief's sample to disk and checks
+the report comes out right end to end. The rest of that file covers the same thing via stdin, a missing file
+exiting non-zero, file and stdin agreeing on the same input, a few real-file quirks (CRLF line endings, no
+trailing newline, an empty file), and — since "what happens to bad input" is most of the interesting behavior
+here — one isolated test per discard scenario: a fill or return with no `created`, a return with nothing to
+cancel, a duplicate `created`, a line with the wrong number of fields, an unrecognized event name, a blank line.
+I know most of those scenarios are already covered one layer down in `LedgerTests`/`EventParserTests` — I kept
+both on purpose rather than trimming the "slower" copy, since the two layers are testing different things (the
+rule itself, vs. that the rule still holds once real file I/O is in the loop) and I'd rather pay the small
+maintenance cost than lose either guarantee. Each test checks the report and that a warning came out of it; a
+representative test per `DiscardReason` in `LedgerTests` and `EventParserTests` goes further and checks *which*
+reason was recorded, not just the count. All of it runs under `mvn test` along with everything else.
+
+JUnit 5 plus AssertJ. `containsExactly` where order is part of what's being verified (the final report),
+`containsExactlyInAnyOrder` where it isn't.
 
 ## Tradeoffs
 
-- **Immutable ledger versus a mutable accumulator.** Returning a new `Ledger` per event costs a small map copy, but
-  makes behavior easy to reason about and test — there's never a half-updated `Ledger` to worry about. At this
-  problem's scale the allocation cost doesn't matter.
-- **Per-prescription fill tracking versus per-patient tallies only.** The spec guarantees every return has a prior
-  fill, so per-patient tallies alone would technically be enough. I keyed the ledger by `PrescriptionId` (patient +
-  drug) and track each prescription's own fill/return counts instead, because that's what lets the ledger *structurally*
-  enforce "discard before `created`" and "ignore a return with no valid prior fill" — those rules fall out of a map
-  lookup rather than being special-cased trust in well-formed input. `Prescription` owns its own `PrescriptionId`
-  (rather than duplicating `patientName`/`drugName` as separate fields), so `Ledger.withPrescription` derives the map
-  key from the prescription itself — there's no way to hand it a mismatched key/value pair.
-- **Streaming.** Input is processed one line at a time via `Stream<String>` (`EventSource.lines()`), folded into the
-  ledger with `reduce`, rather than being collected into a list first. Memory scales with the number of distinct
-  prescriptions and patients, not with the size of the input file.
-- **Accessors versus "ask, don't tell".** `Ledger` reads a prescription's patient name through an accessor
-  (`patientName()`), the same way `IncomeCalculator` reads `fillCount()` and `returnCount()`. Having `Prescription`
-  build its own `PatientSummary` would follow "ask, don't tell" more closely, but it would pull a reporting concept
-  into the domain object — the same reason pricing lives in `IncomeCalculator` and not on `Prescription`. I accepted
-  the getters as a pragmatic compromise.
-- **Warnings as a port, injected where the discard decision is made.** `Ledger` and `EventParser` each take a
-  `Warnings` dependency and call it at the exact point they decide to discard something, rather than collecting
-  rejections and reporting them later. This keeps the warning message next to the reason for it, at the cost of
-  `Ledger` and `EventParser` both depending on the same small interface.
+**Immutable `Ledger` vs. a mutable accumulator.** Handing back a new `Ledger` on every event means copying a small
+map each time. At this scale that cost is nothing, and in exchange there's never a half-updated `Ledger` sitting
+around to reason about.
+
+**Tracking fills per prescription instead of just per patient.** The brief guarantees every `returned` has a prior
+`filled`, so technically a running per-patient tally would be enough — no per-prescription bookkeeping needed. I
+keyed the ledger by `PrescriptionId` anyway, because that's what turns "discard anything before `created`" and
+"ignore an invalid return" into an ordinary map lookup instead of something I'd have to trust the input to never
+violate. `Prescription` owns its own `PrescriptionId` rather than carrying patient/drug as separate fields, so
+`Ledger` always derives its map key from the prescription being stored — there's no code path where the key and
+the value could disagree with each other.
+
+**Streaming instead of loading everything into memory first.** Lines come in as a `Stream<String>` and get folded
+into the ledger one at a time with `reduce`, rather than collected into a list up front. Memory tracks the number
+of distinct patients and prescriptions, not the size of the input file.
+
+**Accessors instead of strict "ask, don't tell."** `Ledger` reads a prescription's patient name through a plain
+getter, the same way `IncomeCalculator` reads its fill and return counts. Having `Prescription` hand back its own
+`PatientSummary` would be more in the spirit of "tell, don't ask," but it would mean `Prescription` needs to know
+about reporting — which is exactly why pricing lives in `IncomeCalculator` instead of on `Prescription` too. I'd
+rather have a couple of plain getters than a domain object that knows about things outside its job.
+
+**`returnIt()` refuses the call instead of trusting whoever's calling it.** My first pass had `Ledger` check
+`fillCount() > 0` before ever calling `Prescription.returnIt()` — which meant the one rule that actually matters
+("can't return more than you filled") lived one hop away from the object that owns the counts, and anything else
+calling `returnIt()` directly would've had to remember to redo that check itself. `returnIt()` now returns
+`Optional<Prescription>` and hands back empty when there's nothing to cancel, so the invariant travels with the
+object instead of living in whoever happens to call it.
+
+**Warnings fired at the point of discard, not collected and reported later.** `Ledger` and `EventParser` each hold
+a `Warnings` reference and call it the moment they decide something's getting thrown away, instead of returning a
+list of rejections for someone else to report. The upside is the warning is written right next to the code that
+knows *why*; the downside is both classes now depend on the same small interface just to do that. The reason
+itself is a typed `DiscardReason`, not a string — mostly so a test (or a future caller) can check *what kind* of
+thing got discarded without string-matching stderr output. One wrinkle: I wanted `StderrWarnings` to switch over
+the sealed interface with pattern-matching case labels, but that's still a preview feature on Java 17 — the
+`javac` that ships with this JDK won't compile it without `--enable-preview`, which I didn't want to force on
+anyone just to run `mvn test`. It falls back to a chain of `instanceof` checks instead, which is stable since
+Java 16 and does the same job.
 
 ## Prerequisites
 
@@ -168,37 +192,30 @@ mvn test
 
 ## Running the program
 
-Compile once:
+Build the jar:
 
 ```
-mvn compile
+mvn package
 ```
 
-Then run against a file argument:
+That produces `target/PrescriptionReporter.jar` with a `Main-Class` manifest entry, so it's runnable directly:
 
 ```
-PrescriptionReporter <Filepath>
+java -jar target/PrescriptionReporter.jar <Filepath>
 ```
 
 or pipe events in on stdin:
 
 ```
-cat <Filepath> | PrescriptionReporter
+cat <Filepath> | java -jar target/PrescriptionReporter.jar
 ```
 
-`PrescriptionReporter` isn't packaged as its own executable yet (`pom.xml` has no jar/shade plugin), so today that
-usage line maps to:
+There's no shell/batch wrapper yet, so `PrescriptionReporter <Filepath>` (the usage line in the Requirements
+section above) isn't a literal command you can type — `java -jar target/PrescriptionReporter.jar <Filepath>` is
+what it actually maps to today. `mvn compile` plus
+`java -cp target/classes com.softwareascraft.prescriptionreporter.Main <Filepath>` also still works if you'd
+rather skip the jar step while iterating.
 
-```
-java -cp target/classes com.softwareascraft.prescriptionreporter.Main <Filepath>
-```
-
-and, for stdin:
-
-```
-cat <Filepath> | java -cp target/classes com.softwareascraft.prescriptionreporter.Main
-```
-
-Malformed or discarded lines are reported on stderr as they're skipped; the report itself goes to stdout, so
-redirecting stdout to a file keeps the report clean. A missing or unreadable file argument prints an error and exits
-non-zero.
+Skipped lines get reported on stderr as they happen; the report itself only ever goes to stdout, so redirecting
+stdout to a file gets you a clean report with the warnings left out. A file that's missing or can't be read prints
+an error and exits non-zero.
