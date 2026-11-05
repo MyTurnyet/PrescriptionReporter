@@ -14,7 +14,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Tag("Unit")
+@Tag("Functional")
 public class CommandLineAppTests {
     @TempDir
     Path tempDir;

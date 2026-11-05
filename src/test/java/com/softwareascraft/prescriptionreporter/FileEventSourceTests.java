@@ -13,7 +13,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Tag("Unit")
+@Tag("Functional")
 public class FileEventSourceTests {
     @TempDir
     Path tempDir;
