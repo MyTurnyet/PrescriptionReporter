@@ -1,7 +1,7 @@
 # Prescription Report
 
-Reads a stream of pharmacy prescription events — `PatientName DrugName created|filled|returned` — and writes
-one report line per patient: net fills and income.
+Reads a stream of pharmacy prescription events — `PatientName DrugName created|filled|returned` — and
+writes one report line per patient: net fills and income.
 
 ```
 $ prescriptionreporter events.txt
@@ -50,6 +50,28 @@ Outside the suite, `scripts/smoke-test.sh` runs the packaged jar against the bri
 stdout and exit codes, and `scripts/check-line-length.sh` fails over 120 characters. GitHub Actions
 (`.github/workflows/ci.yml`) runs `./mvnw --batch-mode verify` and then both scripts, on JDK 17.
 
+### A native launcher, optionally
+
+The jar plus the launcher scripts are the intended way to run this: small, cross-platform, and already the
+invocation the brief asks for. If you want a native binary anyway, `scripts/build-exe.sh` makes one with
+`jpackage`, which ships with JDK 14 and newer, so there is nothing extra to install:
+
+```
+./scripts/build-exe.sh           # writes target/dist/PrescriptionReporter/
+```
+
+It produces a **directory, not a single file** — a launcher (`PrescriptionReporter.exe` on Windows) beside
+`app/` folder and a bundled `runtime/`, about 130 MB in total. The launcher will not start without those
+siblings, so the whole folder is the unit you distribute. A genuinely standalone single binary needs
+GraalVM's `native-image`, a separate toolchain this project does not depend on.
+
+The script passes `--win-console` on Windows, which matters more than it looks: without it `jpackage` emits a
+GUI-subsystem binary that still prints correctly into a pipe but shows nothing when a person runs it in a
+terminal — it fails only in the case you would not think to test. So the script checks what it built rather
+than trusting it: it runs the binary against the brief's sample, asserts the report and the exit code for an
+unreadable file, and on Windows reads the PE subsystem directly, since no amount of running the binary can
+detect that particular mistake.
+
 ## Behaviour
 
 **Input.** One event per line, `PatientName DrugName EventName`, separated by one or more spaces; no field
@@ -95,9 +117,9 @@ Rather than guess, I worked backward from the sample's expected numbers:
 | John    | 1 fill, 1 return  | 0         | 0 × $5 − $1 = **-$1** |
 | Nick    | none              | 0         | **$0**                |
 
-Those three only reconcile if "total fills" means fills net of returns and income is `$5 × net fills − $1 ×
-returns` — a return takes back the $5 *and* costs a dollar on top. The penalty is permanent: refilling the
-same prescription later earns a fresh $5 but does not refund the dollar.
+Those three only reconcile if "total fills" means fills net of returns and income is `$5 × net fills −
+$1 × returns` — a return takes back the $5 *and* costs a dollar on top. The penalty is permanent:
+refilling the same prescription later earns a fresh $5 but does not refund the dollar.
 
 ## Assumptions
 
