@@ -1,0 +1,16 @@
+# Normalise line endings in the repository so a checkout behaves the same everywhere.
+* text=auto
+
+# These are executed by a shell. A CRLF checkout makes the interpreter line unusable
+# ("bad interpreter: no such file or directory"), so they must stay LF even on Windows.
+mvnw                text eol=lf
+prescriptionreporter text eol=lf
+*.sh                text eol=lf
+
+# Batch files are executed by cmd.exe, which wants CRLF.
+mvnw.cmd    text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Keep test fixtures byte-exact: some of them deliberately carry CRLF or no trailing newline.
+*.jar       binary

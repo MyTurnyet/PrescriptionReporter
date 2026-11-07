@@ -2,99 +2,87 @@ package com.softwareascraft.prescriptionreporter;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Parsing is a pure function of the line, so these tests need no ledger and no warning recorder.
+ */
 @Tag("Unit")
-public class EventParserTests {
-    final RecordingWarnings warnings = new RecordingWarnings();
-    final EventParser parser = new EventParser(warnings);
-    final Ledger ledger = new Ledger(new IncomeCalculator(), new RecordingWarnings());
+class EventParserTests {
+    private final EventParser parser = new EventParser();
 
-    @Test
-    void parsesACreatedEvent() {
-        final Ledger result = parser.applyLine(ledger, "Mark B created");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, 0));
+    private ParsedEvent parseSuccessfully(String line) {
+        final ParseResult result = parser.parse(line);
+        assertThat(result).isInstanceOf(ParseResult.Parsed.class);
+        return ((ParseResult.Parsed) result).event();
+    }
+
+    private DiscardReason rejectionFor(String line) {
+        final ParseResult result = parser.parse(line);
+        assertThat(result).isInstanceOf(ParseResult.Rejected.class);
+        return ((ParseResult.Rejected) result).reason();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "Mark B created,  CREATED",
+            "Mark B filled,   FILLED",
+            "Mark B returned, RETURNED",
+    })
+    void parsesEachEventType(String line, EventType expected) {
+        assertThat(parseSuccessfully(line))
+                .isEqualTo(new ParsedEvent(new PrescriptionId("Mark", "B"), expected));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CREATED", "created", "Created", "cReAtEd"})
+    void theEventNameIsMatchedCaseInsensitively(String eventName) {
+        assertThat(parseSuccessfully("Mark B " + eventName).type()).isEqualTo(EventType.CREATED);
     }
 
     @Test
-    void parsesAFilledEvent() {
-        final Ledger created = parser.applyLine(ledger, "Mark B created");
-        final Ledger result = parser.applyLine(created, "Mark B filled");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 1, 5));
+    void patientAndDrugNamesKeepTheirCase() {
+        assertThat(parseSuccessfully("mark b created").id())
+                .isEqualTo(new PrescriptionId("mark", "b"));
     }
 
     @Test
-    void parsesAReturnedEvent() {
-        final Ledger filled = parser.applyLine(parser.applyLine(ledger, "Mark B created"), "Mark B filled");
-        final Ledger result = parser.applyLine(filled, "Mark B returned");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, -1));
+    void runsOfSpacesBetweenFieldsCollapse() {
+        assertThat(parseSuccessfully("Mark  B   created").id())
+                .isEqualTo(new PrescriptionId("Mark", "B"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Mark B created\r", "Mark B created \n", "  Mark B created  "})
+    void surroundingWhitespaceAndCrlfAreStrippedBeforeParsing(String line) {
+        assertThat(parseSuccessfully(line).id()).isEqualTo(new PrescriptionId("Mark", "B"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "\t", "\r"})
+    void aBlankLineIsRejectedAsBlank(String line) {
+        assertThat(rejectionFor(line)).isEqualTo(new DiscardReason.BlankLine());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"created", "Mark created", "Mark B extra created"})
+    void aLineWithTheWrongFieldCountIsRejectedAsMalformed(String line) {
+        assertThat(rejectionFor(line)).isEqualTo(new DiscardReason.MalformedLine(line));
     }
 
     @Test
-    void eventNameMatchingIsCaseInsensitive() {
-        final Ledger created = parser.applyLine(ledger, "Mark B CREATED");
-        assertThat(created.summaries()).containsExactly(new PatientSummary("Mark", 0, 0));
-        final Ledger filled = parser.applyLine(created, "Mark B Filled");
-        assertThat(filled.summaries()).containsExactly(new PatientSummary("Mark", 1, 5));
-        final Ledger returned = parser.applyLine(filled, "Mark B ReTuRnEd");
-        assertThat(returned.summaries()).containsExactly(new PatientSummary("Mark", 0, -1));
+    void anUnrecognisedEventNameIsRejectedAsUnknown() {
+        assertThat(rejectionFor("Mark B dispensed"))
+                .isEqualTo(new DiscardReason.UnknownEvent("Mark B dispensed"));
     }
 
     @Test
-    void patientAndDrugNamesAreNotCaseFolded() {
-        final Ledger result = parser.applyLine(ledger, "mark B created");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("mark", 0, 0));
-    }
-
-    @Test
-    void multipleSpacesBetweenFieldsAreCollapsed() {
-        final Ledger result = parser.applyLine(ledger, "Mark  B   created");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, 0));
-    }
-
-    @Test
-    void blankLineIsSkippedWithWarning() {
-        final Ledger result = parser.applyLine(ledger, "");
-        assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.reasons()).containsExactly(new DiscardReason.BlankLine());
-    }
-
-    @Test
-    void whitespaceOnlyLineIsTreatedAsBlank() {
-        final Ledger result = parser.applyLine(ledger, "   ");
-        assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.reasons()).hasSize(1);
-    }
-
-    @Test
-    void lineWithWrongFieldCountIsSkippedWithWarning() {
-        Ledger result = parser.applyLine(ledger, "created");
-        result = parser.applyLine(result, "Mark created");
-        result = parser.applyLine(result, "Mark B extra created");
-        assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.reasons()).containsExactly(
-                new DiscardReason.MalformedLine("created"),
-                new DiscardReason.MalformedLine("Mark created"),
-                new DiscardReason.MalformedLine("Mark B extra created"));
-    }
-
-    @Test
-    void unknownEventNameIsSkippedWithWarning() {
-        final Ledger result = parser.applyLine(ledger, "Mark B dispensed");
-        assertThat(result.summaries()).isEmpty();
-        assertThat(warnings.reasons()).containsExactly(new DiscardReason.UnknownEvent("Mark B dispensed"));
-    }
-
-    @Test
-    void crlfLineEndingIsStrippedBeforeParsing() {
-        final Ledger result = parser.applyLine(ledger, "Mark B created\r");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, 0));
-    }
-
-    @Test
-    void trailingWhitespaceIsStrippedBeforeParsing() {
-        final Ledger result = parser.applyLine(ledger, "Mark B created \n");
-        assertThat(result.summaries()).containsExactly(new PatientSummary("Mark", 0, 0));
+    void aRejectionReportsTheStrippedLineSoTheMessageHasNoStrayWhitespace() {
+        assertThat(rejectionFor("  Mark B dispensed  "))
+                .isEqualTo(new DiscardReason.UnknownEvent("Mark B dispensed"));
     }
 }

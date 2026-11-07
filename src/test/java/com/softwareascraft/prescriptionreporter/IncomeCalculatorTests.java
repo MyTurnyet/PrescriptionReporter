@@ -5,41 +5,47 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-
 @Tag("Unit")
-public class IncomeCalculatorTests {
-    final Prescription prescription = new Prescription("User Name", "Drug Name");
+class IncomeCalculatorTests {
+    private final IncomeCalculator incomeCalculator = new IncomeCalculator();
+    private final Prescription prescription = new Prescription("Mark", "B");
 
     @Test
-    void calculatorReturnsZeroForUnfulfilledPrescription() {
-        final IncomeCalculator incomeCalculator = new IncomeCalculator();
-        final int income = incomeCalculator.incomeFor(prescription);
-        assertThat(income).isEqualTo(0);
+    void anUnfilledPrescriptionEarnsNothing() {
+        assertThat(incomeCalculator.incomeFor(prescription)).isZero();
     }
 
     @Test
-    void incomeForPrescriptionFilledOnceIsFive() {
-        final Prescription fillPrescription = prescription.fillIt();
-        final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
-        assertThat(totalAmount).isEqualTo(5);
+    void eachFillEarnsFiveDollars() {
+        assertThat(incomeCalculator.incomeFor(prescription.filled())).isEqualTo(5);
+        assertThat(incomeCalculator.incomeFor(prescription.filled().filled())).isEqualTo(10);
     }
 
     @Test
-    void incomeForPrescriptionFilledTwiceIsTen() {
-        final Prescription fillPrescription = prescription.fillIt().fillIt();
-        final int totalAmount = new IncomeCalculator().incomeFor(fillPrescription);
-        assertThat(totalAmount).isEqualTo(10);
+    void aReturnTakesBackTheFiveDollarsAndCostsOneMore() {
+        final Prescription returned = prescription.filled().returned().orElseThrow();
+
+        assertThat(incomeCalculator.incomeFor(returned)).isEqualTo(-1);
     }
 
     @Test
-    void prescriptionFilledThenReturnedLosesOneDollar() {
-        final Prescription returnedPrescription = prescription.fillIt().returnIt().orElseThrow();
-        assertThat(new IncomeCalculator().incomeFor(returnedPrescription)).isEqualTo(-1);
-    }
-    @Test
-    void returnPenaltyIsKeptWhenPrescriptionIsFilledAgain() {
-        final Prescription finalPrescription = prescription.fillIt().returnIt().orElseThrow().fillIt();
+    void theReturnPenaltyIsNotRefundedByFillingAgain() {
+        final Prescription refilled = prescription.filled().returned().orElseThrow().filled();
 
-        assertThat(new IncomeCalculator().incomeFor(finalPrescription)).isEqualTo(4);
+        assertThat(incomeCalculator.incomeFor(refilled)).isEqualTo(4);
+    }
+
+    /**
+     * Guards the documented bound: income is computed in {@code long}, so the widest product an
+     * {@code int} fill count can produce cannot overflow.
+     */
+    @Test
+    void incomeDoesNotOverflowForTheLargestPlausibleFillCount() {
+        Prescription many = prescription;
+        for (int i = 0; i < 1_000; i++) {
+            many = many.filled();
+        }
+
+        assertThat(incomeCalculator.incomeFor(many)).isEqualTo(5_000L);
     }
 }

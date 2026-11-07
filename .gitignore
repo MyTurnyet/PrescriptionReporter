@@ -1,10 +1,9 @@
 target/
-!.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
-./.idea/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -33,9 +32,6 @@ build/
 
 ### Mac OS ###
 .DS_Store
-/.idea/compiler.xml
-/.idea/encodings.xml
-/.idea/jarRepositories.xml
 
 #ignore review files
 claude-suggestions.md

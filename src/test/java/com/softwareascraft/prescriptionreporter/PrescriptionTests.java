@@ -7,59 +7,62 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-
 @Tag("Unit")
-public class PrescriptionTests {
-    final String patientName = "User Name";
-    final String drugName = "Drug Name";
-    final Prescription prescription = new Prescription(patientName, drugName);
+class PrescriptionTests {
+    private static final String PATIENT = "Mark";
+    private static final String DRUG = "B";
+
+    private final Prescription prescription = new Prescription(PATIENT, DRUG);
 
     @Test
-    void newPrescriptionHasNoFills() {
-        assertThat(prescription.fillCount()).isZero();
+    void aNewPrescriptionHasNoFillsAndNoReturns() {
+        assertThat(prescription.netFillCount()).isZero();
         assertThat(prescription.returnCount()).isZero();
-        assertThat(prescription.patientName()).isEqualTo(patientName);
-    }
-    @Test
-    void prescriptionFilledOnceHasOneFill() {
-        final Prescription filledPrescription = prescription.fillIt();
-        assertThat(filledPrescription.fillCount()).isEqualTo(1);
-    }
-    @Test
-    void prescriptionFilledTwiceHasTwoFill() {
-        final Prescription filledPrescription = prescription.fillIt().fillIt();
-        assertThat(filledPrescription.fillCount()).isEqualTo(2);
-    }
-    @Test
-    void prescriptionFilledAndThenReturnedHasZeroFills() {
-        final Prescription filledPrescription = prescription.fillIt();
-        assertThat(filledPrescription.fillCount()).isEqualTo(1);
-        final Optional<Prescription> returnedPrescription = filledPrescription.returnIt();
-        assertThat(returnedPrescription).isPresent();
-        assertThat(returnedPrescription.get().fillCount()).isZero();
-        assertThat(returnedPrescription.get().returnCount()).isEqualTo(1);
-    }
-    @Test
-    void prescriptionTwiceAndThenReturnedHasOneFills() {
-        final Prescription filledPrescription = prescription.fillIt().fillIt();
-        assertThat(filledPrescription.fillCount()).isEqualTo(2);
-        final Optional<Prescription> returnedPrescription = filledPrescription.returnIt();
-        assertThat(returnedPrescription).isPresent();
-        assertThat(returnedPrescription.get().fillCount()).isEqualTo(1);
+        assertThat(prescription.patientName()).isEqualTo(PATIENT);
+        assertThat(prescription.id()).isEqualTo(new PrescriptionId(PATIENT, DRUG));
     }
 
     @Test
-    void returningAValidFillReturnsPopulatedOptionalWithUpdatedCounts() {
-        final Prescription filledTwice = prescription.fillIt().fillIt();
-        final Optional<Prescription> returnedPrescription = filledTwice.returnIt();
-        assertThat(returnedPrescription).isPresent();
-        assertThat(returnedPrescription.get().fillCount()).isEqualTo(1);
-        assertThat(returnedPrescription.get().returnCount()).isEqualTo(1);
+    void eachFillAddsOneToTheNetCount() {
+        assertThat(prescription.filled().netFillCount()).isEqualTo(1);
+        assertThat(prescription.filled().filled().netFillCount()).isEqualTo(2);
     }
 
     @Test
-    void returningAPrescriptionThatWasNeverFilledIsRefused() {
-        final Optional<Prescription> returnedPrescription = prescription.returnIt();
-        assertThat(returnedPrescription).isEmpty();
+    void aReturnCancelsExactlyOneFill() {
+        final Prescription returned = prescription.filled().filled().returned().orElseThrow();
+
+        assertThat(returned.netFillCount()).isEqualTo(1);
+        assertThat(returned.returnCount()).isEqualTo(1);
+    }
+
+    @Test
+    void returningTheOnlyFillLeavesNoNetFillsButRecordsTheReturn() {
+        final Prescription returned = prescription.filled().returned().orElseThrow();
+
+        assertThat(returned.netFillCount()).isZero();
+        assertThat(returned.returnCount()).isEqualTo(1);
+    }
+
+    @Test
+    void aPrescriptionThatWasNeverFilledRefusesAReturn() {
+        assertThat(prescription.returned()).isEmpty();
+    }
+
+    @Test
+    void aPrescriptionWithEveryFillAlreadyReturnedRefusesAFurtherReturn() {
+        final Prescription allReturned = prescription.filled().returned().orElseThrow();
+
+        final Optional<Prescription> again = allReturned.returned();
+
+        assertThat(again).isEmpty();
+    }
+
+    @Test
+    void fillingAndReturningLeaveTheOriginalUnchanged() {
+        prescription.filled().filled().returned();
+
+        assertThat(prescription.netFillCount()).isZero();
+        assertThat(prescription.returnCount()).isZero();
     }
 }

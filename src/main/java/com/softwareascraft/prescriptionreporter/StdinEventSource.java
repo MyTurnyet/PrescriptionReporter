@@ -1,18 +1,41 @@
 package com.softwareascraft.prescriptionreporter;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.util.stream.Stream;
 
-public class StdinEventSource implements EventSource {
-    private boolean consumed = false;
+/**
+ * Reads event lines from standard input as UTF-8 (see {@link Streams}).
+ *
+ * <p>The stream is supplied rather than read from {@link System#in} directly, so tests exercise
+ * this adapter by handing it an input stream instead of swapping global state.
+ */
+public final class StdinEventSource implements EventSource {
+    private final InputStream in;
+    private boolean consumed;
 
+    public StdinEventSource() {
+        this(System.in);
+    }
+
+    StdinEventSource(InputStream in) {
+        this.in = in;
+    }
+
+    @Override
+    public String description() {
+        return "<stdin>";
+    }
+
+    /**
+     * @throws IllegalStateException on a second call — stdin is one-shot, and a second reader
+     *                               would silently split the input between the two
+     */
     @Override
     public Stream<String> lines() {
         if (consumed) {
-            throw new IllegalStateException("StdinEventSource.lines() can only be called once");
+            throw new IllegalStateException("standard input has already been read");
         }
         consumed = true;
-        return new BufferedReader(new InputStreamReader(System.in)).lines();
+        return Streams.reader(in).lines();
     }
 }

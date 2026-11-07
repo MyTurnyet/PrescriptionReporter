@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify (JDK 17)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # The repository is developed on Windows (core.fileMode=false), so the
+      # executable bit is not reliably recorded in git.
+      - name: Make wrapper and scripts executable
+        run: chmod +x mvnw scripts/*.sh
+
+      - name: Verify
+        run: ./mvnw --batch-mode verify
+
+      - name: Packaged-JAR smoke test
+        run: ./scripts/smoke-test.sh target/PrescriptionReporter.jar
+
+      - name: Line-length check (max 120)
+        run: ./scripts/check-line-length.sh 120 src

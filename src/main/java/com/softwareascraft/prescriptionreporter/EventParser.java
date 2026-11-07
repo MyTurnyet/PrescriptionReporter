@@ -1,35 +1,31 @@
 package com.softwareascraft.prescriptionreporter;
 
-import java.util.Locale;
+/**
+ * Turns one input line into a {@link ParsedEvent}, or into the reason it was discarded.
+ *
+ * <p>Parsing only. It holds no ledger and no warning port, so it is a pure function of the line
+ * and can be tested without building either.
+ *
+ * <p>Lines are {@code PatientName DrugName EventName}, separated by one or more spaces. Leading
+ * and trailing whitespace is stripped first, which also absorbs a trailing {@code \r} from CRLF
+ * input. The event name is matched case-insensitively; patient and drug names are left exactly as
+ * written.
+ */
+public final class EventParser {
+    private static final int EXPECTED_FIELDS = 3;
 
-public class EventParser {
-    private final Warnings warnings;
-
-    public EventParser(Warnings warnings) {
-        this.warnings = warnings;
-    }
-
-    public Ledger applyLine(Ledger ledger, String line) {
+    public ParseResult parse(String line) {
         final String trimmed = line.strip();
         if (trimmed.isEmpty()) {
-            return rejectLine(ledger, new DiscardReason.BlankLine());
+            return new ParseResult.Rejected(new DiscardReason.BlankLine());
         }
         final String[] fields = trimmed.split(" +");
-        return fields.length == 3 ? applyFields(ledger, fields, trimmed) : rejectLine(ledger, new DiscardReason.MalformedLine(trimmed));
-    }
-
-    private Ledger applyFields(Ledger ledger, String[] fields, String line) {
-        final PrescriptionId id = new PrescriptionId(fields[0], fields[1]);
-        return switch (fields[2].toLowerCase(Locale.ROOT)) {
-            case "created" -> ledger.create(id);
-            case "filled" -> ledger.fill(id);
-            case "returned" -> ledger.returnOne(id);
-            default -> rejectLine(ledger, new DiscardReason.UnknownEvent(line));
-        };
-    }
-
-    private Ledger rejectLine(Ledger ledger, DiscardReason reason) {
-        warnings.warn(reason);
-        return ledger;
+        if (fields.length != EXPECTED_FIELDS) {
+            return new ParseResult.Rejected(new DiscardReason.MalformedLine(trimmed));
+        }
+        return EventType.fromName(fields[2])
+                .<ParseResult>map(type -> new ParseResult.Parsed(
+                        new ParsedEvent(new PrescriptionId(fields[0], fields[1]), type)))
+                .orElseGet(() -> new ParseResult.Rejected(new DiscardReason.UnknownEvent(trimmed)));
     }
 }

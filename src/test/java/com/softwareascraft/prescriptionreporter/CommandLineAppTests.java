@@ -3,221 +3,278 @@ package com.softwareascraft.prescriptionreporter;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
+/**
+ * Runs the real {@link CommandLineApp} — real adapters, real parser, real ledger — against real
+ * files in a {@code @TempDir}. Streams are injected rather than swapped globally, so these tests
+ * mutate no shared state and are safe to run in parallel.
+ */
 @Tag("Functional")
-public class CommandLineAppTests {
+class CommandLineAppTests {
+    private static final String SAMPLE = "Mark B created\nMark B filled\nMark B filled\n";
+
+    private static final String BRIEF_SAMPLE =
+            String.join("\n", ReportApplicationTests.BRIEF_SAMPLE) + "\n";
+
     @TempDir
     Path tempDir;
 
-    private static final String SAMPLE = "Mark B created\nMark B filled\nMark B filled\n";
+    private final RecordingWarnings warnings = new RecordingWarnings();
+    private final InMemoryReportSink sink = new InMemoryReportSink();
+    private final ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
 
-    private static final String FULL_SAMPLE = String.join("\n",
-            "Nick A created",
-            "Mark B created",
-            "Mark B filled",
-            "Mark C filled",
-            "Mark B returned",
-            "John E created",
-            "Mark B filled",
-            "Mark B filled",
-            "Paul D filled",
-            "John E filled",
-            "John E returned") + "\n";
-
-    private static final List<String> FULL_SAMPLE_EXPECTED_REPORT = List.of(
-            "John: 0 fills -$1 income",
-            "Mark: 2 fills $9 income",
-            "Nick: 0 fills $0 income");
-
-    @Test
-    void readsFromStdinWhenNoArgumentIsGivenAndReturnsExitCodeZero() {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final InputStream originalIn = System.in;
-        System.setIn(new ByteArrayInputStream(SAMPLE.getBytes(StandardCharsets.UTF_8)));
-        int exitCode;
-        try {
-            exitCode = new CommandLineApp(new String[0], new RecordingWarnings(), sink).run();
-        } finally {
-            System.setIn(originalIn);
-        }
-
-        assertThat(exitCode).isZero();
-        assertThat(sink.written()).containsExactly("Mark: 2 fills $10 income");
+    private int run(String[] args, String stdin) {
+        return new CommandLineApp(args, warnings, sink,
+                new PrintStream(diagnostics, true, StandardCharsets.UTF_8), bytesOf(stdin)).run();
     }
 
-    @Test
-    void readsFromTheNamedFileWhenGivenAndReturnsExitCodeZero() throws IOException {
+    private int runWithSink(String[] args, ReportSink replacementSink) {
+        return new CommandLineApp(args, warnings, replacementSink,
+                new PrintStream(diagnostics, true, StandardCharsets.UTF_8), bytesOf("")).run();
+    }
+
+    private int runFile(Path file) {
+        return run(new String[]{file.toString()}, "");
+    }
+
+    private int runStdin(String input) {
+        return run(new String[0], input);
+    }
+
+    private Path fileWith(String content) throws IOException {
         final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, SAMPLE);
-        final InMemoryReportSink sink = new InMemoryReportSink();
+        Files.writeString(file, content, StandardCharsets.UTF_8);
+        return file;
+    }
 
-        final int exitCode = new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+    private String diagnosticsText() {
+        return diagnostics.toString(StandardCharsets.UTF_8);
+    }
 
-        assertThat(exitCode).isZero();
+    private static InputStream bytesOf(String input) {
+        return new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8));
+    }
+
+    // --- the happy paths -------------------------------------------------------------------
+
+    @Test
+    void readsTheNamedFileAndExitsZero() throws IOException {
+        assertThat(runFile(fileWith(SAMPLE))).isEqualTo(CommandLineApp.EXIT_OK);
         assertThat(sink.written()).containsExactly("Mark: 2 fills $10 income");
     }
 
     @Test
-    void aMissingFileReturnsANonZeroExitCodeAndWritesNothing() {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final Path missing = tempDir.resolve("missing.txt");
+    void readsStandardInputWhenGivenNoArgumentAndExitsZero() {
+        assertThat(runStdin(SAMPLE)).isEqualTo(CommandLineApp.EXIT_OK);
+        assertThat(sink.written()).containsExactly("Mark: 2 fills $10 income");
+    }
 
-        final int exitCode = new CommandLineApp(new String[]{missing.toString()}, new RecordingWarnings(), sink).run();
+    @Test
+    void theBriefsSampleProducesTheExpectedReportThroughARealFile() throws IOException {
+        assertThat(runFile(fileWith(BRIEF_SAMPLE))).isEqualTo(CommandLineApp.EXIT_OK);
+        assertThat(sink.written()).containsExactlyElementsOf(ReportApplicationTests.BRIEF_SAMPLE_REPORT);
+    }
 
-        assertThat(exitCode).isNotZero();
+    @Test
+    void crlfLineEndingsProduceTheSameReport() throws IOException {
+        runFile(fileWith(BRIEF_SAMPLE.replace("\n", "\r\n")));
+
+        assertThat(sink.written()).containsExactlyElementsOf(ReportApplicationTests.BRIEF_SAMPLE_REPORT);
+    }
+
+    @Test
+    void aMissingTrailingNewlineStillParsesTheLastLine() throws IOException {
+        runFile(fileWith(BRIEF_SAMPLE.stripTrailing()));
+
+        assertThat(sink.written()).containsExactlyElementsOf(ReportApplicationTests.BRIEF_SAMPLE_REPORT);
+    }
+
+    @Test
+    void anEmptyFileProducesAnEmptyReportAndExitsZero() throws IOException {
+        assertThat(runFile(fileWith(""))).isEqualTo(CommandLineApp.EXIT_OK);
         assertThat(sink.written()).isEmpty();
     }
 
+    // --- encoding: the two input paths must agree -----------------------------------------
+
+    /**
+     * The regression test for the defect this suite previously certified as fixed while being
+     * unable to detect it: every fixture was ASCII, so file and stdin agreed by accident. With a
+     * non-ASCII name they disagreed, because the file decoded as UTF-8 and stdin as the platform
+     * default.
+     */
     @Test
-    void fileAndStdinProduceEquivalentOutputForTheSameContent() throws IOException {
-        final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, SAMPLE);
-        final InMemoryReportSink fileSink = new InMemoryReportSink();
-        new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), fileSink).run();
+    void aFileAndStandardInputProduceTheSameReportForNonAsciiNames() throws IOException {
+        final String accented = "José B created\nJosé B filled\n";
+
+        runFile(fileWith(accented));
+        final List<String> fromFile = sink.written();
 
         final InMemoryReportSink stdinSink = new InMemoryReportSink();
-        final InputStream originalIn = System.in;
-        System.setIn(new ByteArrayInputStream(SAMPLE.getBytes(StandardCharsets.UTF_8)));
-        try {
-            new CommandLineApp(new String[0], new RecordingWarnings(), stdinSink).run();
-        } finally {
-            System.setIn(originalIn);
-        }
+        new CommandLineApp(new String[0], warnings, stdinSink,
+                new PrintStream(diagnostics, true, StandardCharsets.UTF_8), bytesOf(accented)).run();
 
-        assertThat(fileSink.written()).isEqualTo(stdinSink.written());
+        assertThat(fromFile).containsExactly("José: 1 fills $5 income");
+        assertThat(stdinSink.written()).isEqualTo(fromFile);
     }
 
     @Test
-    void theFullSampleInputFromTheBriefProducesTheExpectedReportViaARealFile() throws IOException {
-        final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, FULL_SAMPLE);
-        final InMemoryReportSink sink = new InMemoryReportSink();
+    void aFileAndStandardInputProduceTheSameReportForAsciiNames() throws IOException {
+        runFile(fileWith(SAMPLE));
+        final List<String> fromFile = sink.written();
 
-        final int exitCode = new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
+        final InMemoryReportSink stdinSink = new InMemoryReportSink();
+        new CommandLineApp(new String[0], warnings, stdinSink,
+                new PrintStream(diagnostics, true, StandardCharsets.UTF_8), bytesOf(SAMPLE)).run();
 
-        assertThat(exitCode).isZero();
-        assertThat(sink.written()).containsExactlyElementsOf(FULL_SAMPLE_EXPECTED_REPORT);
+        assertThat(stdinSink.written()).isEqualTo(fromFile);
+    }
+
+    // --- bad input: one case per discard reason -------------------------------------------
+
+    private static Stream<Arguments> discardScenarios() {
+        final PrescriptionId markB = new PrescriptionId("Mark", "B");
+        return Stream.of(
+                arguments("a fill with no created",
+                        "Mark B filled\n",
+                        List.of(),
+                        new DiscardReason.NoCreatedPrescriptionToFill(markB)),
+                arguments("a return with no created",
+                        "Mark B returned\n",
+                        List.of(),
+                        new DiscardReason.NoValidPriorFillToReturn(markB)),
+                arguments("a return with no fill left to cancel",
+                        "Mark B created\nMark B returned\n",
+                        List.of("Mark: 0 fills $0 income"),
+                        new DiscardReason.NoValidPriorFillToReturn(markB)),
+                arguments("a duplicate created",
+                        "Mark B created\nMark B filled\nMark B created\n",
+                        List.of("Mark: 1 fills $5 income"),
+                        new DiscardReason.DuplicateCreated(markB)),
+                arguments("a line with the wrong field count",
+                        "Mark B created\nMark created\nMark B filled\n",
+                        List.of("Mark: 1 fills $5 income"),
+                        new DiscardReason.MalformedLine("Mark created")),
+                arguments("an unknown event name",
+                        "Mark B created\nMark B dispensed\nMark B filled\n",
+                        List.of("Mark: 1 fills $5 income"),
+                        new DiscardReason.UnknownEvent("Mark B dispensed")),
+                arguments("a blank line",
+                        "Mark B created\n\nMark B filled\n",
+                        List.of("Mark: 1 fills $5 income"),
+                        new DiscardReason.BlankLine()));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("discardScenarios")
+    void aBadEntryIsDiscardedWithItsOwnReasonAndTheRestStillReports(
+            String scenario, String input, List<String> expectedReport, DiscardReason expectedReason)
+            throws IOException {
+
+        assertThat(runFile(fileWith(input))).isEqualTo(CommandLineApp.EXIT_OK);
+        assertThat(sink.written()).containsExactlyElementsOf(expectedReport);
+        assertThat(warnings.reasons()).containsExactly(expectedReason);
     }
 
     @Test
-    void theFullSampleWithCrlfLineEndingsProducesTheSameReport() throws IOException {
-        final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, FULL_SAMPLE.replace("\n", "\r\n"));
-        final InMemoryReportSink sink = new InMemoryReportSink();
+    void everyDiscardReasonVariantHasAnEndToEndScenario() {
+        final int variants = DiscardReason.class.getPermittedSubclasses().length;
 
-        new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
-
-        assertThat(sink.written()).containsExactlyElementsOf(FULL_SAMPLE_EXPECTED_REPORT);
+        assertThat(discardScenarios().count()).isGreaterThanOrEqualTo(variants);
     }
 
     @Test
-    void aFileWithNoTrailingNewlineStillParsesTheLastLine() throws IOException {
-        final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, FULL_SAMPLE.stripTrailing());
-        final InMemoryReportSink sink = new InMemoryReportSink();
-
-        new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
-
-        assertThat(sink.written()).containsExactlyElementsOf(FULL_SAMPLE_EXPECTED_REPORT);
-    }
-
-    @Test
-    void anEmptyFileProducesAnEmptyReportAndExitCodeZero() throws IOException {
-        final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, "");
-        final InMemoryReportSink sink = new InMemoryReportSink();
-
-        final int exitCode = new CommandLineApp(new String[]{file.toString()}, new RecordingWarnings(), sink).run();
-
-        assertThat(exitCode).isZero();
-        assertThat(sink.written()).isEmpty();
-    }
-
-    private int runFileThrough(String content, InMemoryReportSink sink, RecordingWarnings warnings) throws IOException {
-        final Path file = tempDir.resolve("events.txt");
-        Files.writeString(file, content);
-        return new CommandLineApp(new String[]{file.toString()}, warnings, sink).run();
-    }
-
-    @Test
-    void aFilledEventWithNoPriorCreatedIsDiscardedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        final int exitCode = runFileThrough("Mark B filled\n", sink, warnings);
-
-        assertThat(exitCode).isZero();
-        assertThat(sink.written()).isEmpty();
-        assertThat(warnings.reasons()).hasSize(1);
-    }
-
-    @Test
-    void aReturnedEventWithNoPriorCreatedIsDiscardedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        final int exitCode = runFileThrough("Mark B returned\n", sink, warnings);
-
-        assertThat(exitCode).isZero();
-        assertThat(sink.written()).isEmpty();
-        assertThat(warnings.reasons()).hasSize(1);
-    }
-
-    @Test
-    void aReturnedEventWithNoValidPriorFillIsDiscardedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        runFileThrough("Mark B created\nMark B returned\n", sink, warnings);
+    void aDiscardedEventIsNotReplayedWhenItsCreatedArrivesLater() throws IOException {
+        runFile(fileWith("Mark B filled\nMark B created\n"));
 
         assertThat(sink.written()).containsExactly("Mark: 0 fills $0 income");
-        assertThat(warnings.reasons()).hasSize(1);
+        assertThat(warnings.reasons())
+                .containsExactly(new DiscardReason.NoCreatedPrescriptionToFill(new PrescriptionId("Mark", "B")));
+    }
+
+    // --- failures and exit codes -----------------------------------------------------------
+
+    @Test
+    void aMissingFileExitsOneWritesNoReportAndNamesTheFile() {
+        final Path missing = tempDir.resolve("missing.txt");
+
+        assertThat(runFile(missing)).isEqualTo(CommandLineApp.EXIT_IO_FAILURE);
+        assertThat(sink.wasWritten()).isFalse();
+        assertThat(diagnosticsText())
+                .contains(missing.toString())
+                .contains("no such file")
+                .doesNotContain("NoSuchFileException");
+    }
+
+    /**
+     * {@code Path.of} throws {@link java.nio.file.InvalidPathException}, which is not an
+     * {@code IOException} and previously escaped the handler as a stack trace.
+     */
+    @Test
+    void anUnusableFilePathIsReportedAsAUsageErrorRatherThanAStackTrace() {
+        assertThat(run(new String[]{"bad\u0000path.txt"}, "")).isEqualTo(CommandLineApp.EXIT_USAGE);
+        assertThat(sink.wasWritten()).isFalse();
+        assertThat(diagnosticsText())
+                .contains("not a usable file path")
+                .doesNotContain("InvalidPathException");
+    }
+
+    /**
+     * The defect: a swallowed write failure meant exit 0 with nothing delivered.
+     */
+    @Test
+    void anUndeliverableReportExitsOneRatherThanClaimingSuccess() {
+        final ReportSink failing = lines -> {
+            throw new UncheckedIOException("could not write the report to standard output",
+                    new IOException("simulated"));
+        };
+
+        assertThat(runWithSink(new String[0], failing)).isEqualTo(CommandLineApp.EXIT_IO_FAILURE);
+        assertThat(diagnosticsText()).contains("standard output");
     }
 
     @Test
-    void aDuplicateCreatedEventIsDiscardedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        runFileThrough("Mark B created\nMark B filled\nMark B created\n", sink, warnings);
+    void tooManyArgumentsIsAUsageErrorRatherThanBeingSilentlyIgnored() {
+        assertThat(run(new String[]{"one.txt", "two.txt"}, "")).isEqualTo(CommandLineApp.EXIT_USAGE);
+        assertThat(sink.wasWritten()).isFalse();
+        assertThat(diagnosticsText()).contains("at most one file argument").contains("usage:");
+    }
 
-        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.reasons()).hasSize(1);
+    @ParameterizedTest
+    @ValueSource(strings = {"--help", "-h"})
+    void askingForHelpPrintsUsageAndExitsZero(String flag) {
+        assertThat(run(new String[]{flag}, "")).isEqualTo(CommandLineApp.EXIT_OK);
+        assertThat(sink.wasWritten()).isFalse();
+        assertThat(diagnosticsText())
+                .contains("usage:")
+                .contains("created|filled|returned")
+                .contains("Exit codes:");
     }
 
     @Test
-    void aLineWithTheWrongFieldCountIsSkippedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        runFileThrough("Mark B created\nMark created\nMark B filled\n", sink, warnings);
+    void usageAndWarningsStayOffTheReportSoStdoutIsOnlyEverTheReport() throws IOException {
+        runFile(fileWith("Mark B created\nrubbish\n"));
 
-        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.reasons()).hasSize(1);
-    }
-
-    @Test
-    void anUnknownEventNameIsSkippedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        runFileThrough("Mark B created\nMark B dispensed\nMark B filled\n", sink, warnings);
-
-        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
-        assertThat(warnings.reasons()).hasSize(1);
-    }
-
-    @Test
-    void aBlankLineIsSkippedAndWarned() throws IOException {
-        final InMemoryReportSink sink = new InMemoryReportSink();
-        final RecordingWarnings warnings = new RecordingWarnings();
-        runFileThrough("Mark B created\n\nMark B filled\n", sink, warnings);
-
-        assertThat(sink.written()).containsExactly("Mark: 1 fills $5 income");
+        assertThat(sink.written()).containsExactly("Mark: 0 fills $0 income");
         assertThat(warnings.reasons()).hasSize(1);
     }
 }
