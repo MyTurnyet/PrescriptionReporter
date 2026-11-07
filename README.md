@@ -1,221 +1,187 @@
 # Prescription Report
 
-Reads a stream of pharmacy prescription events and prints, per patient, how many fills they have and how much
-income they generated.
+Reads a stream of pharmacy prescription events — `PatientName DrugName created|filled|returned` — and writes
+one report line per patient: net fills and income.
 
-## Requirements
+```
+$ prescriptionreporter events.txt
+John: 0 fills -$1 income
+Mark: 2 fills $9 income
+Nick: 0 fills $0 income
+```
 
-- Input is a file passed as an argument (`PrescriptionReporter <Filepath>`) or piped in on stdin
-  (`cat <Filepath> | PrescriptionReporter`).
-- Each line is `PatientName DrugName EventName`, space-delimited. No field contains spaces.
-- Three event types: `created`, `filled`, `returned`.
-- Output is one line per patient: total fills, total income.
+Input is a file named as the one argument (`prescriptionreporter <file>`) or piped in on standard input
+(`cat <file> | prescriptionreporter`).
 
-## Reading the rules
+## Build and run
 
-A prescription is identified by (patient, drug) — `Mark B` and `Mark C` are different prescriptions even though
-they're the same patient. `filled` and `returned` events that show up before their prescription's `created` event
-get discarded. They're not buffered waiting for a `created` to show up later, and they're not retroactively applied
-if one never does — if the input never creates that prescription, those events just never happened as far as the
-report is concerned. A `returned` cancels exactly one prior fill.
+Needs **JDK 17** to build, and Java 17 or newer to run. Build with the Maven Wrapper, which pins Maven
+3.9.9; the pom pins every plugin version and sets `maven.compiler.release=17`. Those plugin versions need
+Maven 3.6.3 or newer, so use the wrapper rather than whatever `mvn` is on the path.
 
-The income rule in the brief ("each return is a $1 loss") doesn't say whether that's net of fills or not, so I
-worked backward from the sample numbers instead of guessing:
+```
+./mvnw package           # writes target/PrescriptionReporter.jar; ./mvnw verify runs the tests too
+```
 
-| Patient | Events             | Net fills | Income                |
-|---------|--------------------|-----------|------------------------|
-| Mark    | 3 fills, 1 return  | 2         | 2 × $5 − $1 = **$9**  |
-| John    | 1 fill, 1 return   | 0         | 0 × $5 − $1 = **-$1** |
-| Nick    | none               | 0         | **$0**                |
+Then run it through the launcher at the repository root — `prescriptionreporter`, or
+`prescriptionreporter.cmd` on Windows:
 
-That only works out if "total fills" means net of returns, and income is `$5 × net fills − $1 × returns` — a
-return takes back the $5 *and* costs an extra dollar. And the dollar penalty sticks: filling the same prescription
-again later doesn't refund it, it just earns a fresh $5 on top.
+```
+./prescriptionreporter <file>          # POSIX shells
+cat <file> | ./prescriptionreporter
+prescriptionreporter <file>            # cmd.exe
+type <file> | prescriptionreporter
+```
+
+Either script resolves the jar relative to itself, so it works from any working directory and when symlinked
+onto `PATH` — which is also how to get the bare `prescriptionreporter` form in a POSIX shell, since those do
+not look in the current directory. Arguments, stdin and the program's exit status pass through untouched,
+and the script exits 127 with a message if the jar is not built or no JVM is reachable. Without a launcher,
+`java -jar target/PrescriptionReporter.jar <file>` does the same thing; either form takes `--help`.
+
+125 tests, all passing, in two filterable tiers — 81 `@Tag("Unit")` and 44 `@Tag("Functional")`:
+
+```
+./mvnw test                      # everything
+./mvnw test -Dgroups=Unit        # or -Dgroups=Functional
+```
+
+Outside the suite, `scripts/smoke-test.sh` runs the packaged jar against the brief's sample and asserts
+stdout and exit codes, and `scripts/check-line-length.sh` fails over 120 characters. GitHub Actions
+(`.github/workflows/ci.yml`) runs `./mvnw --batch-mode verify` and then both scripts, on JDK 17.
+
+## Behaviour
+
+**Input.** One event per line, `PatientName DrugName EventName`, separated by one or more spaces; no field
+contains spaces. Surrounding whitespace is stripped, which also absorbs a trailing `\r` from CRLF input.
+Event names match case-insensitively; patient and drug names are never normalised.
+
+A prescription is a (patient, drug) pair — `Mark B` and `Mark C` are two prescriptions for one patient.
+`filled` and `returned` are discarded unless that prescription has already been `created`: they are not
+buffered waiting for a `created` to arrive later, and a `created` further down the file does not replay
+them. A `returned` cancels exactly one prior fill, and is discarded if there is none to cancel.
+
+**Output.** One line per patient, sorted by name, in the format the brief's *example* shows (`Mark: 2 fills
+$9 income`, negative income as `-$1`) rather than the format its prose describes; "fills" is always plural.
+A patient appears only with at least one created prescription, which is why the sample's `Paul D filled`
+leaves Paul out of the expected report.
+
+**Streams.** Nothing but the report goes to stdout, so redirecting it gives a clean report. Discarded lines
+warn on stderr, naming the input and line number, and processing continues:
+
+```
+events.txt:4: unknown event ignored, expected created/filled/returned: Mark B dispensed
+events.txt:6: filled event ignored, no created prescription for Paul D
+```
+
+**Exit codes** are part of the contract: `0` a report was produced **and written**, warnings or not; `1` the
+input could not be read or the report could not be written; `2` usage error — an unusable path, or more than
+one file argument. Error messages name the file and the reason (`could not read nope.txt: no such file`),
+never an exception class name.
+
+**Encoding.** UTF-8 end to end — file input, stdin, stdout, stderr — named explicitly, never the platform
+default. Invalid bytes become U+FFFD and the run continues, identically for a file and for stdin, which
+matches how every other kind of bad input is treated. `Files.lines` would instead throw on the first bad
+byte, which is why input is decoded explicitly in `Streams`.
+
+## Deriving the income rules
+
+The brief says a fill earns $5 and "each return is a $1 loss", but not whether that loss is net of the fill.
+Rather than guess, I worked backward from the sample's expected numbers:
+
+| Patient | Events            | Net fills | Income                |
+|---------|-------------------|-----------|-----------------------|
+| Mark    | 3 fills, 1 return | 2         | 2 × $5 − $1 = **$9**  |
+| John    | 1 fill, 1 return  | 0         | 0 × $5 − $1 = **-$1** |
+| Nick    | none              | 0         | **$0**                |
+
+Those three only reconcile if "total fills" means fills net of returns and income is `$5 × net fills − $1 ×
+returns` — a return takes back the $5 *and* costs a dollar on top. The penalty is permanent: refilling the
+same prescription later earns a fresh $5 but does not refund the dollar.
 
 ## Assumptions
 
-Things the brief didn't pin down, so I picked something reasonable and I'm documenting it rather than guessing
-silently:
+Where the brief is silent, I picked a behaviour and pinned it with a test.
 
-1. Patient names are unique keys — two lines with `Mark` are the same patient.
-2. A patient only shows up in the report if they have at least one `created` prescription. `Paul D filled` with no
-   matching `created` is why Paul isn't in the sample's expected output.
-3. The report is sorted alphabetically by patient name. The brief's sample output (Mark, John, Nick) isn't
-   alphabetical, chronological, or sorted by anything I can find — it reads like whatever order a HashMap happened
-   to iterate in for the reference solution. I went with alphabetical so the output is actually deterministic and
-   the tests aren't ordering-fragile.
-4. Output format follows the brief's *example*, not its prose description. The prose says
-   `PatientName TotalFills Income`; the example shows `Mark: 2 fills $9 income` with negative amounts written
-   `-$1` (sign before the dollar sign). I went with what the example actually shows. "fills" is always plural,
-   even for zero or one.
-5. Bad lines — wrong field count, an event name that isn't one of the three, blank lines — get skipped with a
-   warning on stderr, and the rest of the file still processes. Warnings go to stderr specifically so stdout stays
-   a clean report you can pipe somewhere.
-6. Event names match case-insensitively (`Created`, `CREATED`, `created` are all fine). Patient and drug names
-   don't get normalized at all — the brief never implies they should be, and case-folding someone's name felt like
-   the wrong kind of liberty to take.
-7. A `returned` with no valid fill to cancel — including one whose own `filled` event got discarded for having no
-   `created` — is dropped entirely rather than partially applied. No fill-count change, no dollar penalty, just a
-   warning. `Prescription` itself refuses the return (it's the one holding the fill/return counts), so the ledger
-   never has to trust a caller to pre-check — net fills can't go negative by construction.
-8. A duplicate `created` for a prescription that already exists gets ignored and warned, leaving whatever fills
-   and returns it already had alone. The brief says this won't happen, but I'd rather the ledger defend against it
-   than silently wipe out history if it ever did.
-9. No filename argument means read stdin. A filename that can't be opened prints an error and exits non-zero.
-10. Exit code is 0 any time a report actually got produced, warnings or not. Non-zero is reserved for runs that
-    couldn't produce a report at all (an unreadable file).
-11. Money is an `int`, not a float, for the obvious reason.
+1. Patient names are unique keys: two lines saying `Mark` are the same patient.
+2. Sorting uses `String`'s own ordering, so it is case-sensitive and `Nick` precedes `mark`. The sample's
+   order is not reproducible from the input, so I chose alphabetical for determinism.
+3. A duplicate `created` is ignored and warned, leaving that prescription's fills and returns untouched. The
+   brief says it will not happen; the ledger defends against it rather than wiping out history if it did.
+4. A `returned` with no valid fill to cancel — including one whose own `filled` was discarded — is dropped
+   whole: no fill-count change, no penalty, just a warning. `Prescription` refuses the return itself, so net
+   fills cannot go negative by construction.
+5. Money is whole dollars in `long`: no `int` fill count can overflow it, the widest product being
+   `Integer.MAX_VALUE × 5`, about 1.1e10.
+6. No file argument means read stdin; more than one is a usage error rather than silently ignored.
 
-## How it's put together
+## Decisions
 
-I didn't want one big function, but I also didn't want to over-build this into something with five layers of
-indirection for three event types. What I landed on:
+| Decision | Why | Alternative rejected |
+|---|---|---|
+| Mutable `Ledger`, owned per run by `ReportApplication` | O(1) per event: 64,000 lines, ~50 s to ~1.0 s | A new `Ledger` per event — quadratic copying |
+| Parsing and applying split, each returning its outcome | The caller owns the loop, so warnings name the line | Each stage holding a warnings port, blind to lines |
+| An explicit ordered loop over the lines | States the sequential requirement directly | A three-argument `Stream.reduce` (below) |
+| UTF-8 named explicitly, on every stream | Same bytes in, same report out, on every machine | The platform default: file and stdin disagreed |
+| `StdoutReportSink` checks `checkError()` and throws | Exit 0 now means the report was delivered | Trusting `PrintStream`, which swallows `IOException` |
+| Sealed `DiscardReason`, rendered in one exhaustive place | Tests can assert *which* rule fired | A warning string, and an unguarded default case |
+| Named `$5`/`$1` constants in `IncomeCalculator` | The only class that prices anything; the ledger takes it as a parameter and never sees money | Inline literals, and `Math.abs` for the sign |
+| One `ParsedEvent` record and an `EventType` enum | Three cases, one switch, and it lives in `Ledger` | A four-record `PrescriptionEvent` hierarchy (below) |
 
-`EventSource` and `ReportSink` are the input/output seams — interfaces, so the domain doesn't know or care whether
-it's reading a file, stdin, or a test fixture. `FileEventSource` and `StdinEventSource` are the real input
-adapters, `StdoutReportSink` the real output one; tests swap in hand-written in-memory versions instead.
+The `reduce` was a three-argument fold whose combiner, `(a, b) -> b`, never merged two ledgers: it was
+correct only because a defensive `.sequential()` forced sequential evaluation, and removing that one call
+produced an empty report. The abandoned event hierarchy had each record apply itself to the ledger, but
+something still had to switch on the event name to build the right record, so the switch moved one line
+earlier and cost four files.
 
-I did try an event hierarchy at one point — a `PrescriptionEvent` interface with `Created`/`Filled`/`Returned`
-records, each knowing how to apply itself to a `Ledger`. It didn't earn its keep: something still had to switch on
-the event name string to build the right record in the first place, so the switch I was trying to avoid just moved
-one line earlier, at the cost of four extra files for three cases that will never grow a fourth. `EventParser` now
-does the obvious thing instead — `applyLine(Ledger, String)` parses a line and calls `ledger.create`/`fill`/
-`returnOne` directly in one switch expression. One place has a switch on event type; that's fine.
+The classes sit in three packages — `domain` for the rules, `application` for the use case and its ports,
+`adapter` for files, streams and the command line. Dependencies point inward only: `adapter` sees
+`application` and `domain`, `application` sees `domain`, and `domain` sees nothing else.
 
-`Ledger` is immutable and keyed by `PrescriptionId`. `create`, `fill`, and `returnOne` each hand back a new
-`Ledger` rather than mutating anything, and it's the one place that knows whether a `created`/`fill` actually
-counts — `Prescription.returnIt()` handles the "something to cancel" check itself and hands back an empty
-`Optional` if there isn't. `summaries()` groups by patient and adds up fills and income from there.
-
-`IncomeCalculator` is the only class that knows $5 and $1 are the relevant numbers, and they're instance fields,
-not static constants — `Prescription` and `Ledger` never touch money at all. Discard decisions go through a small
-`Warnings` port instead of printing directly, so `Ledger` and `EventParser` don't need to know or care that it's
-stderr on the other end — and what gets discarded is a typed `DiscardReason` (a sealed interface, one record per
-case: a duplicate `created`, a fill/return with nothing to apply to, a malformed line, and so on), not a loose
-string, so nothing downstream has to parse English to find out what happened. `ReportFormatter` handles sorting
-and the `-$1` formatting, kept separate from the domain on purpose.
-
-Wiring lives at the edges: `ReportApplication` folds parsed events into a `Ledger` and writes the result,
-`CommandLineApp` decides stdin vs. a named file and turns a missing file into a non-zero exit, and `Main.main` is
-one line that hands off to `CommandLineApp` — there's nothing left in it worth testing on its own.
-
-A few constraints I held myself to throughout: methods stay under 8 lines and simple, dependencies point at
-interfaces with concrete types only wired up at the edges, everything's immutable with no statics besides `main`,
-and objects get asked to do things rather than having their internals pulled out and poked at — though see the
-tradeoffs section for where I didn't fully hold that last line.
-
-## Testing
-
-Test-first, starting from the smallest possible case (an empty ledger has no summaries) and building up from
-there. No mocking libraries — if something felt like it needed a mock, that was a sign the design needed
-rethinking instead. I/O sits behind interfaces, so tests use small hand-rolled fakes: `InMemoryEventSource`,
-`InMemoryReportSink`, `RecordingWarnings`. A handful of tests use the real filesystem and real stdin/stdout instead
-(`@TempDir`, stream redirection) — that's real behavior worth testing directly, not something to fake away.
-
-Domain rules get tested directly against `Prescription`, `IncomeCalculator`, and `Ledger`. Parsing, formatting, and
-the CLI wiring each have their own focused tests on top of that. `ReportApplicationTests` runs the brief's full
-sample through the whole pipeline with fakes standing in for I/O.
-
-`CommandLineAppTests`, `FileEventSourceTests`, `StdinEventSourceTests`, and `StdoutReportSinkTests` go a step
-further and run against the real filesystem and real streams instead of fakes — these are tagged `@Tag("Functional")`
-rather than `@Tag("Unit")`, so the two tiers are actually filterable, not just a description in this file.
-`CommandLineAppTests` runs the real `CommandLineApp` — real `FileEventSource`, real `EventParser`, real `Ledger`,
-real `ReportFormatter` — against files written to a `@TempDir`.
-`theFullSampleInputFromTheBriefProducesTheExpectedReportViaARealFile` writes the brief's sample to disk and checks
-the report comes out right end to end. The rest of that file covers the same thing via stdin, a missing file
-exiting non-zero, file and stdin agreeing on the same input, a few real-file quirks (CRLF line endings, no
-trailing newline, an empty file), and — since "what happens to bad input" is most of the interesting behavior
-here — one isolated test per discard scenario: a fill or return with no `created`, a return with nothing to
-cancel, a duplicate `created`, a line with the wrong number of fields, an unrecognized event name, a blank line.
-I know most of those scenarios are already covered one layer down in `LedgerTests`/`EventParserTests` — I kept
-both on purpose rather than trimming the "slower" copy, since the two layers are testing different things (the
-rule itself, vs. that the rule still holds once real file I/O is in the loop) and I'd rather pay the small
-maintenance cost than lose either guarantee. Each test checks the report and that a warning came out of it; a
-representative test per `DiscardReason` in `LedgerTests` and `EventParserTests` goes further and checks *which*
-reason was recorded, not just the count. All of it runs under `mvn test` along with everything else.
-
-JUnit 5 plus AssertJ. `containsExactly` where order is part of what's being verified (the final report),
-`containsExactlyInAnyOrder` where it isn't.
+Java packages do not enforce that by themselves, so `PackageDependencyTests` does. It reads the sources and
+fails if any layer names one it should not, which keeps the split a constraint rather than a convention that
+decays on the next edit. It matches the whole file, not just the import block, so an inline fully-qualified
+reference is caught too. Checking it needs no architecture-testing library.
 
 ## Tradeoffs
 
-**Immutable `Ledger` vs. a mutable accumulator.** Handing back a new `Ledger` on every event means copying a small
-map each time. At this scale that cost is nothing, and in exchange there's never a half-updated `Ledger` sitting
-around to reason about.
+**The ledger measurement.** The earlier immutable `Ledger` returned a new instance per accepted event,
+copying the whole prescription map. I had written in this file that "at this scale that cost is nothing". It
+was quadratic. Measured on `corretto-17.0.21`, net of ~400 ms JVM startup:
 
-**Tracking fills per prescription instead of just per patient.** The brief guarantees every `returned` has a prior
-`filled`, so technically a running per-patient tally would be enough — no per-prescription bookkeeping needed. I
-keyed the ledger by `PrescriptionId` anyway, because that's what turns "discard anything before `created`" and
-"ignore an invalid return" into an ordinary map lookup instead of something I'd have to trust the input to never
-violate. `Prescription` owns its own `PrescriptionId` rather than carrying patient/drug as separate fields, so
-`Ledger` always derives its map key from the prescription being stored — there's no code path where the key and
-the value could disagree with each other.
+| Lines  | Before  | After  |
+|--------|---------|--------|
+| 4,000  | 0.5 s   | —      |
+| 8,000  | 0.9 s   | —      |
+| 16,000 | 2.6 s   | —      |
+| 32,000 | 9.9 s   | —      |
+| 64,000 | 49.8 s  | 1.0 s  |
+| 256,000| —       | 1.6 s  |
 
-**Streaming instead of loading everything into memory first.** Lines come in as a `Stream<String>` and get folded
-into the ledger one at a time with `reduce`, rather than collected into a list up front. Memory tracks the number
-of distinct patients and prescriptions, not the size of the input file.
+Roughly 4× per doubling before, linear after. Immutability stayed where it pays — `Prescription`,
+`PrescriptionId` and `PatientSummary` are values, and the summaries the ledger hands back are a snapshot.
+What moved is the accumulation, into the one object nothing else shares. Lines are still streamed, so memory
+tracks distinct prescriptions rather than input size.
 
-**Accessors instead of strict "ask, don't tell."** `Ledger` reads a prescription's patient name through a plain
-getter, the same way `IncomeCalculator` reads its fill and return counts. Having `Prescription` hand back its own
-`PatientSummary` would be more in the spirit of "tell, don't ask," but it would mean `Prescription` needs to know
-about reporting — which is exactly why pricing lives in `IncomeCalculator` instead of on `Prescription` too. I'd
-rather have a couple of plain getters than a domain object that knows about things outside its job.
+**Keying by prescription, not a per-patient tally.** The brief guarantees every `returned` follows a
+`filled`, so a running count per patient would do. Keying by `PrescriptionId` turns "discard anything before
+`created`" and "ignore an invalid return" into a map lookup rather than a property I have to trust the input
+to hold. `Prescription` owns its own id, so the key is always derived from the value stored under it.
 
-**`returnIt()` refuses the call instead of trusting whoever's calling it.** My first pass had `Ledger` check
-`fillCount() > 0` before ever calling `Prescription.returnIt()` — which meant the one rule that actually matters
-("can't return more than you filled") lived one hop away from the object that owns the counts, and anything else
-calling `returnIt()` directly would've had to remember to redo that check itself. `returnIt()` now returns
-`Optional<Prescription>` and hands back empty when there's nothing to cancel, so the invariant travels with the
-object instead of living in whoever happens to call it.
+**Exhaustiveness checked by a test, not the compiler.** Pattern matching for `switch` would let `javac`
+prove every `DiscardReason` is handled, but it is a preview feature on Java 17, so `StderrWarnings` handles
+each variant explicitly, throws on an unrecognised one, and has a test comparing its case count against
+`DiscardReason.class.getPermittedSubclasses()`.
 
-**Warnings fired at the point of discard, not collected and reported later.** `Ledger` and `EventParser` each hold
-a `Warnings` reference and call it the moment they decide something's getting thrown away, instead of returning a
-list of rejections for someone else to report. The upside is the warning is written right next to the code that
-knows *why*; the downside is both classes now depend on the same small interface just to do that. The reason
-itself is a typed `DiscardReason`, not a string — mostly so a test (or a future caller) can check *what kind* of
-thing got discarded without string-matching stderr output. One wrinkle: I wanted `StderrWarnings` to switch over
-the sealed interface with pattern-matching case labels, but that's still a preview feature on Java 17 — the
-`javac` that ships with this JDK won't compile it without `--enable-preview`, which I didn't want to force on
-anyone just to run `mvn test`. It falls back to a chain of `instanceof` checks instead, which is stable since
-Java 16 and does the same job.
+## Tests
 
-## Prerequisites
+Test-first, JUnit 5 and AssertJ, no mocking library: I/O sits behind `EventSource`, `ReportSink` and
+`Warnings`, and tests use small hand-written fakes. Every adapter takes its streams through its constructor,
+so no test swaps `System.in` or `System.out` and the suite mutates no global state. Repeated cases are
+parameterised, and discard tests assert which `DiscardReason` was recorded rather than counting warnings.
 
-- Java 17
-- Maven 3.x
-
-## Running the tests
-
-```
-mvn test
-```
-
-## Running the program
-
-Build the jar:
-
-```
-mvn package
-```
-
-That produces `target/PrescriptionReporter.jar` with a `Main-Class` manifest entry, so it's runnable directly:
-
-```
-java -jar target/PrescriptionReporter.jar <Filepath>
-```
-
-or pipe events in on stdin:
-
-```
-cat <Filepath> | java -jar target/PrescriptionReporter.jar
-```
-
-There's no shell/batch wrapper yet, so `PrescriptionReporter <Filepath>` (the usage line in the Requirements
-section above) isn't a literal command you can type — `java -jar target/PrescriptionReporter.jar <Filepath>` is
-what it actually maps to today. `mvn compile` plus
-`java -cp target/classes com.softwareascraft.prescriptionreporter.Main <Filepath>` also still works if you'd
-rather skip the jar step while iterating.
-
-Skipped lines get reported on stderr as they happen; the report itself only ever goes to stdout, so redirecting
-stdout to a file gets you a clean report with the warnings left out. A file that's missing or can't be read prints
-an error and exits non-zero.
+`Unit` covers the rules directly, `Functional` runs against real files and real streams, and the smoke
+script covers the packaged jar. Between them: the brief's full sample end to end, a discarded event whose
+`created` arrives later, returns isolated per drug, a mid-input read failure writing no partial report,
+non-ASCII names asserted at the byte level through both input paths, undeliverable stdout, and malformed
+bytes.

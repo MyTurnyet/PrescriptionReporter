@@ -26,7 +26,7 @@ jobs:
       # The repository is developed on Windows (core.fileMode=false), so the
       # executable bit is not reliably recorded in git.
       - name: Make wrapper and scripts executable
-        run: chmod +x mvnw scripts/*.sh
+        run: chmod +x mvnw prescriptionreporter scripts/*.sh
 
       - name: Verify
         run: ./mvnw --batch-mode verify

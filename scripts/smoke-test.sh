@@ -128,6 +128,57 @@ else
   note_fail "missing file argument: expected a non-zero exit code, got 0"
 fi
 
+# --- 4. the documented launcher -------------------------------------------------
+#
+# The README tells people to run ./prescriptionreporter, so that is what has to work.
+# Checking only `java -jar` would leave the documented entry point unproven, including
+# whether it forwards stdin and propagates the program's exit codes.
+LAUNCHER="$(cd "$(dirname "$0")/.." && pwd)/prescriptionreporter"
+
+if [ ! -f "$LAUNCHER" ]; then
+  note_fail "launcher not found at '$LAUNCHER'"
+else
+  launcher_status=0
+  launcher_output="$("$LAUNCHER" "$INPUT" 2>"$WORK_DIR/launcher-stderr.txt" | tr -d '\r')" \
+    || launcher_status=$?
+
+  if [ "$launcher_status" -eq 0 ] && [ "$launcher_output" = "$EXPECTED" ]; then
+    note_pass "launcher with a file argument: exit 0 and matching stdout"
+  else
+    note_fail "launcher with a file argument: exit $launcher_status, stdout mismatch"
+    printf -- '--- expected ---\n%s\n--- actual ---\n%s\n--------------\n' \
+      "$EXPECTED" "$launcher_output" >&2
+  fi
+
+  launcher_stdin_status=0
+  launcher_stdin_output="$(cat "$INPUT" | "$LAUNCHER" 2>"$WORK_DIR/launcher-stdin-stderr.txt" \
+    | tr -d '\r')" || launcher_stdin_status=$?
+
+  if [ "$launcher_stdin_status" -eq 0 ] && [ "$launcher_stdin_output" = "$EXPECTED" ]; then
+    note_pass "launcher reading stdin: exit 0 and matching stdout"
+  else
+    note_fail "launcher reading stdin: exit $launcher_stdin_status, stdout mismatch"
+  fi
+
+  # Exit codes are part of the contract, so the launcher must not flatten them:
+  # 1 for an unreadable input, 2 for a bad command line.
+  launcher_missing_status=0
+  "$LAUNCHER" "$WORK_DIR/does-not-exist.txt" >/dev/null 2>&1 || launcher_missing_status=$?
+  if [ "$launcher_missing_status" -eq 1 ]; then
+    note_pass "launcher propagates exit 1 for an unreadable file"
+  else
+    note_fail "launcher: expected exit 1 for an unreadable file, got $launcher_missing_status"
+  fi
+
+  launcher_usage_status=0
+  "$LAUNCHER" one.txt two.txt >/dev/null 2>&1 || launcher_usage_status=$?
+  if [ "$launcher_usage_status" -eq 2 ]; then
+    note_pass "launcher propagates exit 2 for a usage error"
+  else
+    note_fail "launcher: expected exit 2 for a usage error, got $launcher_usage_status"
+  fi
+fi
+
 # --- summary ----------------------------------------------------------------
 echo
 if [ "$failures" -eq 0 ]; then

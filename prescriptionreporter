@@ -1,0 +1,54 @@
+#!/usr/bin/env sh
+#
+# Launcher for PrescriptionReporter, so the program can be invoked the way the brief
+# describes it:
+#
+#   prescriptionreporter <file>
+#   cat <file> | prescriptionreporter
+#
+# Build the jar first with ./mvnw package.
+#
+# This script is deliberately transparent: it forwards its arguments and standard input
+# unchanged, and it execs the JVM so the program's own exit status (0 report written,
+# 1 input/output failure, 2 usage error) reaches the caller untouched. No -Dfile.encoding
+# is passed, because the program names UTF-8 explicitly for every stream rather than
+# relying on the platform default.
+
+set -eu
+
+# Resolve the directory holding this script, following symlinks, so the launcher works
+# from any working directory and when linked onto PATH.
+script_path=$0
+while [ -L "$script_path" ]; do
+    link_target=$(readlink "$script_path")
+    case $link_target in
+        /*) script_path=$link_target ;;
+        *)  script_path=$(dirname "$script_path")/$link_target ;;
+    esac
+done
+app_home=$(cd "$(dirname "$script_path")" && pwd)
+
+jar="$app_home/target/PrescriptionReporter.jar"
+
+if [ ! -f "$jar" ]; then
+    echo "prescriptionreporter: jar not built at $jar" >&2
+    echo "prescriptionreporter: run './mvnw package' first" >&2
+    exit 127
+fi
+
+# Prefer JAVA_HOME, fall back to PATH.
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    java_cmd="$JAVA_HOME/bin/java"
+elif [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java.exe" ]; then
+    java_cmd="$JAVA_HOME/bin/java.exe"
+else
+    java_cmd=java
+fi
+
+if ! "$java_cmd" -version >/dev/null 2>&1; then
+    echo "prescriptionreporter: cannot run a JVM ('$java_cmd')" >&2
+    echo "prescriptionreporter: set JAVA_HOME or put java on PATH (Java 17 or newer)" >&2
+    exit 127
+fi
+
+exec "$java_cmd" -jar "$jar" "$@"
